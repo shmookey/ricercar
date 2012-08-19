@@ -1,3 +1,24 @@
+DATA_TABLE_HEADERS = [
+	("Marker",
+		["ID"]),
+	("Position",
+		["X",
+		"Y"]),
+	("Colour Sensitivity",
+		["Hue",
+		"Sat",
+		"Val"]),
+	("MIDI Mapping",
+		["X Mode",
+		"X Min",
+		"X Max",
+		"X Ch",
+		"Y Mode",
+		"Y Min",
+		"Y Max",
+		"Y Ch"])
+]
+
 #
 # Enumerated values
 #

@@ -9,6 +9,11 @@ from CVGLImage import CVGLImage
 from constants import *
 from config import *
 
+#
+# Public Service Announcement
+# Remember: In OpenGL coordinates the origin (0,0) is at the bottom left.
+#
+
 class MainWindow:
 	def __init__ (self, scheduler):
 		self.midiInPorts = []
@@ -56,7 +61,34 @@ class MainWindow:
 
 
 	def SetTracker (self, tracker):
+		''' Informs the Window of the Tracker from which it will be 
+		displaying information. 
+		
+		Causes the configuration UI elements to be regenerated.
+		'''
 		self.tracker = tracker
+		self.ConfigurationUI = DataTable (
+			window = self,
+			headers = DATA_TABLE_HEADERS,
+			rowData = self.GetConfigurationData (),
+			bounds=Rect(0,0,DISPLAY_SIZE[0],250)) # TODO: fix magic number
+
+	def GetConfigurationData (self):
+		return [
+			[m.name,
+			"%.2f" % m.x,
+			"%.2f" % m.y,
+			"%i-%i" % (m.colourRange.hue[0],m.colourRange.hue[1]),
+			"%i-%i" % (m.colourRange.saturation[0],m.colourRange.saturation[1]),
+			"%i-%i" % (m.colourRange.value[0],m.colourRange.value[1]),
+			m.xMode,
+			m.xMin,
+			m.xMax,
+			m.xChannel,
+			m.yMode,
+			m.yMin,
+			m.yMax,
+			m.yChannel] for m in self.tracker.markers]
 
 	def SetMIDIDeviceList (self, inPorts, outPorts, activeIn, activeOut):
 		self.midiInPorts = inPorts
@@ -75,14 +107,14 @@ class MainWindow:
 			window = self,
 			options=enumerate(inPorts),
 			default=activeIn.deviceID,
-			bounds=Rect(20,DISPLAY_SIZE[1]-20,COL_WIDTH*5,0),
+			bounds=Rect(20,DISPLAY_SIZE[1]-20,UI_TABLE_COLUMN_WIDTH*5,0),
 			onSelect=SelectInputDevice)
 		self.OutputSelector = SelectionGroup (
 			label = "MIDI Output",
 			window = self,
 			options=enumerate(outPorts),
 			default=activeIn.deviceID,
-			bounds=Rect(400,DISPLAY_SIZE[1]-20,COL_WIDTH*5,0),
+			bounds=Rect(400,DISPLAY_SIZE[1]-20,UI_TABLE_COLUMN_WIDTH*5,0),
 			onSelect=SelectOutputDevice)
 
 		#for i,port in enumerate(inPorts):
@@ -130,9 +162,11 @@ class MainWindow:
 		
 		glPushMatrix ()
 		glColor4f (*UI_HUD_TEXT_COLOUR)
-		glTranslatef (DISPLAY_SIZE[0]-100.0, DISPLAY_SIZE[1]-ROW_HEIGHT, 0.0)
+		glTranslatef (DISPLAY_SIZE[0]-100.0, DISPLAY_SIZE[1]-UI_TABLE_ROW_HEIGHT, 0.0)
 		self.smallFont.Render ("FPS: %i" % self.scheduler.trackerTimer.fps)
 		glPopMatrix()
+
+		self.ConfigurationUI.rowData = self.GetConfigurationData ()
 
 		if self.showHUD: self.DrawConfigUI ()
 		if self.showIO: self.DrawIOSelector ()
@@ -221,7 +255,9 @@ class MainWindow:
 	
 
 	def DrawConfigUI (self):
-		glColor4f (*UI_HUD_BG_COLOUR)
+		self.ConfigurationUI.Render ()
+		self.ConfigurationUI.Redraw ()
+		'''glColor4f (*UI_HUD_BG_COLOUR)
 		self.DrawFrame (FRAME_NOTEXTURE,0,0,DISPLAY_SIZE[0],130)
 		glColor4f (*UI_HUD_TEXT_COLOUR)
 		glPushMatrix ()
@@ -231,111 +267,111 @@ class MainWindow:
 		
 		# Render position heading
 		glPushMatrix ()
-		glTranslatef (COL_WIDTH,0.0,0.0)
+		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 		self.smallFont.Render ("Position")
-		glTranslatef (0.0,-ROW_HEIGHT,0.0)
+		glTranslatef (0.0,-UI_TABLE_ROW_HEIGHT,0.0)
 		self.smallFont.Render ("x")
-		glTranslatef (COL_WIDTH,0.0,0.0)
+		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 		self.smallFont.Render ("y")
 		glPopMatrix ()
 
 		# Render colour sensitivity headings
 		glPushMatrix ()
-		glTranslatef (COL_WIDTH*3,0.0,0.0)
+		glTranslatef (UI_TABLE_COLUMN_WIDTH*3,0.0,0.0)
 		self.smallFont.Render ("Colour Sensitivity")
-		glTranslatef (0.0,-ROW_HEIGHT,0.0)
+		glTranslatef (0.0,-UI_TABLE_ROW_HEIGHT,0.0)
 		self.smallFont.Render ("Hue")
-		glTranslatef (COL_WIDTH,0.0,0.0)
+		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 		self.smallFont.Render ("Sat")
-		glTranslatef (COL_WIDTH,0.0,0.0)
+		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 		self.smallFont.Render ("Val")
 		glPopMatrix ()
 
 		# Render MIDI output headings
 		glPushMatrix ()
-		glTranslatef (COL_WIDTH*6,0.0,0.0)
+		glTranslatef (UI_TABLE_COLUMN_WIDTH*6,0.0,0.0)
 		self.smallFont.Render ("MIDI Mapping")
-		glTranslatef (0.0,-ROW_HEIGHT,0.0)
+		glTranslatef (0.0,-UI_TABLE_ROW_HEIGHT,0.0)
 		self.smallFont.Render ("X Mode")
-		glTranslatef (COL_WIDTH,0.0,0.0)
+		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 		self.smallFont.Render ("X Min")
-		glTranslatef (COL_WIDTH,0.0,0.0)
+		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 		self.smallFont.Render ("X Max")
-		glTranslatef (COL_WIDTH,0.0,0.0)
+		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 		self.smallFont.Render ("X Ch")
-		glTranslatef (COL_WIDTH,0.0,0.0)
+		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 		self.smallFont.Render ("Y Mode")
-		glTranslatef (COL_WIDTH,0.0,0.0)
+		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 		self.smallFont.Render ("Y Min")
-		glTranslatef (COL_WIDTH,0.0,0.0)
+		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 		self.smallFont.Render ("Y Max")
-		glTranslatef (COL_WIDTH,0.0,0.0)
+		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 		self.smallFont.Render ("Y Ch")
 		glPopMatrix ()
 
 		# Render marker names
 		glPushMatrix ()
-		glTranslatef (0.0,-ROW_HEIGHT*2,0.0)
+		glTranslatef (0.0,-UI_TABLE_ROW_HEIGHT*2,0.0)
 		self.smallFont.Render ("Red")
-		glTranslatef (0.0,-ROW_HEIGHT,0.0)
+		glTranslatef (0.0,-UI_TABLE_ROW_HEIGHT,0.0)
 		self.smallFont.Render ("Green")
-		glTranslatef (0.0,-ROW_HEIGHT,0.0)
+		glTranslatef (0.0,-UI_TABLE_ROW_HEIGHT,0.0)
 		self.smallFont.Render ("Blue")
-		glTranslatef (0.0,-ROW_HEIGHT,0.0)
+		glTranslatef (0.0,-UI_TABLE_ROW_HEIGHT,0.0)
 		self.smallFont.Render ("Yellow")
 		glPopMatrix ()
 
 		# Render data
 		glPushMatrix ()
-		glTranslatef (COL_WIDTH,-ROW_HEIGHT*2,0.0)
+		glTranslatef (UI_TABLE_COLUMN_WIDTH,-UI_TABLE_ROW_HEIGHT*2,0.0)
 		for marker in self.tracker.markers:
 			cRange = marker.colourRange
 			self.smallFont.Render ("%.2f" % marker.x)
-			glTranslatef (COL_WIDTH,0.0,0.0)
+			glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 			self.smallFont.Render ("%.2f" % marker.y)
-			glTranslatef (COL_WIDTH,0.0,0.0)
+			glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 			self.smallFont.Render ("%i-%i" % (cRange.hue[0],cRange.hue[1]))
-			glTranslatef (COL_WIDTH,0.0,0.0)
+			glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 			self.smallFont.Render ("%i-%i" % (cRange.saturation[0],cRange.saturation[1]))
-			glTranslatef (COL_WIDTH,0.0,0.0)
+			glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 			self.smallFont.Render ("%i-%i" % (cRange.value[0],cRange.value[1]))
-			glTranslatef (COL_WIDTH,0.0,0.0)
+			glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 			if isinstance(marker, NoteMarker):
 				self.smallFont.Render ("Note")
-				glTranslatef (COL_WIDTH,0.0,0.0)
+				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 				self.smallFont.Render ("%i" % marker.xMin)
-				glTranslatef (COL_WIDTH,0.0,0.0)
+				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 				self.smallFont.Render ("%i" % marker.xMax)
-				glTranslatef (COL_WIDTH,0.0,0.0)
+				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 				self.smallFont.Render ("%i" % (marker.xCh-144))
-				glTranslatef (COL_WIDTH,0.0,0.0)
+				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 				self.smallFont.Render ("Velocity")
-				glTranslatef (COL_WIDTH,0.0,0.0)
+				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 				self.smallFont.Render ("%i" % marker.yMin)
-				glTranslatef (COL_WIDTH,0.0,0.0)
+				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 				self.smallFont.Render ("%i" % marker.yMax)
-				glTranslatef (COL_WIDTH,0.0,0.0)
+				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 				self.smallFont.Render ("%i" % (marker.yCh-144))
 			if isinstance(marker, CVMarker):
 				self.smallFont.Render ("CV")
-				glTranslatef (COL_WIDTH,0.0,0.0)
+				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 				self.smallFont.Render ("%i" % marker.xMin)
-				glTranslatef (COL_WIDTH,0.0,0.0)
+				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 				self.smallFont.Render ("%i" % marker.xMax)
-				glTranslatef (COL_WIDTH,0.0,0.0)
+				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 				self.smallFont.Render ("%i" % (marker.xCh-144))
-				glTranslatef (COL_WIDTH,0.0,0.0)
+				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 				self.smallFont.Render ("CV")
-				glTranslatef (COL_WIDTH,0.0,0.0)
+				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 				self.smallFont.Render ("%i" % marker.yMin)
-				glTranslatef (COL_WIDTH,0.0,0.0)
+				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 				self.smallFont.Render ("%i" % marker.yMax)
-				glTranslatef (COL_WIDTH,0.0,0.0)
+				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 				self.smallFont.Render ("%i" % (marker.yCh-144))
-			glTranslatef (-COL_WIDTH*12,-ROW_HEIGHT,0.0)
+			glTranslatef (-UI_TABLE_COLUMN_WIDTH*12,-UI_TABLE_ROW_HEIGHT,0.0)
 		glPopMatrix ()
 
-		glPopMatrix ()
+		glPopMatrix ()'''
 
 	def DrawIOSelector (self):
 		self.InputSelector.Render ()
@@ -364,6 +400,22 @@ class MainWindow:
 	def ShowMarkers (self, markers):
 		self.markers = markers
 
+
+#
+# UIElement GUI Framework
+# Methods and classes
+#
+
+def LazyRender (renderFn):
+	''' Indicates that a rendering method should only continue if the
+	object has been flagged with requireRedraw, e.g.: because it displays
+	data that has changed.
+	'''
+	def LazilyRenderedFn (self):
+		if not self.requireRedraw: return
+		renderFn (self)
+	return LazilyRenderedFn
+
 class Rect:
 	def __init__ (self,x,y,w,h):
 		self.x = int(x)
@@ -375,10 +427,24 @@ class Rect:
 	def IsPointInside (self,x,y):
 		if x>self.x and x<self.xMax and y>self.y and y<self.yMax: return True
 		return False
+
+	# The 'extend' methods change the relative dimensions of the Rect.
 	def ExtendDownward (self, h):
 		hi = int (h)
 		self.h += hi
 		self.y -= hi
+	def ExtendUpward (self, h):
+		hInt = int (h)
+		self.h += hInt
+		self.yMax += hInt
+
+	def SetHeight (self, h):
+		''' Sets the height of the Rect preserving the location of the bottom-left corner.
+		'''
+		hInt = int(h)
+		self.h = hInt
+		self.yMax = self.y + hInt
+
 	def ApplyPadding (self, p):
 		pi = int(p)
 		self.x += pi
@@ -402,9 +468,12 @@ class Rect:
 		return Rect (self.x,self.y,self.w,self.h)
 
 class UIElement:
-	def __init__ (self, window):
+	def __init__ (self,
+			bounds = None,
+			window = None):
 		self.window = window
 		self.requireRedraw = True
+		self.bounds = bounds
 		self.items = []
 	def Render (self):
 		raise NotImplemented ()
@@ -424,10 +493,11 @@ class SelectionGroup (UIElement):
 			bounds=None,
 			bgColour=UI_HUD_BG_COLOUR,
 			textColour=UI_HUD_TEXT_COLOUR):
-		UIElement.__init__ (self, window)
+		UIElement.__init__ (self,
+			bounds = bounds,
+			window = window)
 		self.onSelect = onSelect
 		self.label = label
-		self.bounds = bounds
 		self.innerBounds = bounds.Clone ()
 		self.innerBounds.ApplyPadding (UI_HUD_PADDING)
 		self.bgColour = bgColour
@@ -436,15 +506,15 @@ class SelectionGroup (UIElement):
 		self.items[default].SetBackgroundColour (UI_HUD_SELECTED_COLOUR)
 
 		# Add some height to the bounding box to accomodate the label
-		self.bounds.ExtendDownward (ROW_HEIGHT + UI_HUD_PADDING*2)
+		self.bounds.ExtendDownward (UI_TABLE_ROW_HEIGHT + UI_HUD_PADDING*2)
 
 	def AddOption (self, label, value):
 		nItems = len (self.items)
 		newRct = Rect (
 			self.innerBounds.x,
-			self.innerBounds.yMax - (nItems+2)*ROW_HEIGHT,
+			self.innerBounds.yMax - (nItems+2)*UI_TABLE_ROW_HEIGHT,
 			self.innerBounds.w,
-			ROW_HEIGHT)
+			UI_TABLE_ROW_HEIGHT)
 		newBtn = Button (
 			bounds = newRct,
 			label = label,
@@ -455,18 +525,18 @@ class SelectionGroup (UIElement):
 
 		# Extend own bounds downwards to accomodate new item
 		if self.bounds:
-			self.bounds.ExtendDownward (ROW_HEIGHT)
+			self.bounds.ExtendDownward (UI_TABLE_ROW_HEIGHT)
 
 		self.Redraw ()
 
+	@LazyRender
 	def Render (self):
-		if not self.requireRedraw: return
 		if self.bounds and not self.bgColour == None:
 			glColor4f (*self.bgColour)
 			self.bounds.Render ()
 		glColor4f (*self.textColour)
 		glPushMatrix ()
-		glTranslatef (self.bounds.x+UI_HUD_LEFT_PADDING, self.bounds.yMax-ROW_HEIGHT+3,0.0)
+		glTranslatef (self.bounds.x+UI_HUD_LEFT_PADDING, self.bounds.yMax-UI_TABLE_ROW_HEIGHT+3,0.0)
 		self.window.smallFont.Render (self.label)
 		glPopMatrix ()
 		for item in self.items:
@@ -495,16 +565,18 @@ class Button (UIElement):
 			textColour = UI_HUD_TEXT_COLOUR,
 			onClick = None,
 			value = None):
-		UIElement.__init__ (self, window)
-		self.bounds = bounds
+		UIElement.__init__ (self,
+			bounds = bounds,
+			window = window)
 		self.bounds.ApplyPadding (UI_HUD_PADDING)
 		self.onClick = onClick
 		self.label = label
 		self.bgColour = bgColour
 		self.textColour = textColour
 		self.value = value
+
+	@LazyRender
 	def Render (self):
-		if not self.requireRedraw: return
 		if self.bgColour != None: glColor4f (*self.bgColour)
 		self.bounds.Render ()
 		glPushMatrix ()
@@ -520,3 +592,63 @@ class Button (UIElement):
 		self.bgColour = bgColour
 		self.Redraw ()
 
+class DataTable (UIElement):
+	''' A table of values with headings and subheadings.
+	
+	Overrides the height specified in the bounds it is given to in order
+	to accomodate all data in the table.
+	'''
+	def __init__ (self,
+			bounds = None,
+			window = None,
+			headers = None,
+			rowData = [],
+			textColour = UI_HUD_TEXT_COLOUR,
+			bgColour = UI_HUD_BG_COLOUR):
+		''' headers is a list of tuples of the form ("Heading",["Subheading 1","Subheading 2"]) '''
+		UIElement.__init__ (self,
+			bounds = bounds,
+			window = window)
+		self.headers = headers
+		self.textColour = textColour
+		self.bgColour = bgColour
+		self.rowData = rowData
+		
+		fullHeight = UI_TABLE_ROW_HEIGHT*(3+len(rowData))
+		self.bounds.SetHeight (fullHeight)
+
+	@LazyRender
+	def Render (self):
+		glColor4f (*self.bgColour)
+		self.bounds.Render ()
+		glPushMatrix ()
+
+		glTranslatef (self.bounds.x, self.bounds.y+self.bounds.h, 0.0)
+		glTranslatef (0.0, -UI_TABLE_ROW_HEIGHT, 0.0)
+		glColor4f (*self.textColour)
+
+		# Render headers
+		cumulativeColumnOffset = 0 # Keeps track of left offset for current header group.
+		for i, (header,subheaders) in enumerate (self.headers):
+			glPushMatrix ()
+			glTranslatef (cumulativeColumnOffset, 0.0, 0.0)
+			# Render top-level header
+			self.window.smallFont.Render ("%s" % str(header))
+			# Render subheaders
+			glTranslatef (0.0, -UI_TABLE_ROW_HEIGHT, 0.0)
+			for subheader in subheaders:
+				self.window.smallFont.Render ("%s" % str(subheader))
+				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
+			# Keep track of how far left we are.
+			cumulativeColumnOffset += len(subheaders) * UI_TABLE_COLUMN_WIDTH
+			glPopMatrix ()
+
+		# Render data
+		for i, row in enumerate (self.rowData):
+			glPushMatrix ()
+			glTranslatef (0.0, -UI_TABLE_ROW_HEIGHT*(i+2), 0.0)
+			for cell in row:
+				self.window.smallFont.Render ("%s" % str(cell))
+				glTranslatef (UI_TABLE_COLUMN_WIDTH, 0.0, 0.0)
+			glPopMatrix ()
+		glPopMatrix ()

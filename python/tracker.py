@@ -19,6 +19,7 @@ class Marker:
 	'''
 
 	def __init__ (self,
+			name="Marker",
 			x=0,
 			y=0,
 			colour=None,
@@ -28,9 +29,10 @@ class Marker:
 			yMin=0,
 			xMax=127,
 			yMax=127,
-			xCh=1,
-			yCh=1,
+			xChannel=1,
+			yChannel=1,
 			colourRange=None):
+		self.name = name
 		self.x = x # Position
 		self.y = y
 		self.tX = x # Target position
@@ -41,8 +43,8 @@ class Marker:
 		self.justAppeared = True
 		self.colour = colour
 		self.midiOut = midiOut
-		self.xCh = xCh
-		self.yCh = yCh
+		self.xChannel = xChannel
+		self.yChannel = yChannel
 		self.xMin = xMin
 		self.yMin = yMin
 		self.xMax = xMax
@@ -89,8 +91,8 @@ class CVMarker (Marker):
 			midiOut=None,
 			visible=False,
 			controller=0,
-			xCh=1,
-			yCh=1,
+			xChannel=1,
+			yChannel=1,
 			xMin=0,
 			xMax=127,
 			yMin=0,
@@ -106,8 +108,8 @@ class CVMarker (Marker):
 					yMin=yMin,
 					xMax=xMax,
 					yMax=yMax,
-					xCh=xCh,
-					yCh=yCh,
+					xChannel=xChannel,
+					yChannel=yChannel,
 					colourRange=colourRange)
 
 	def Tick (self, timeElapsed):
@@ -121,14 +123,15 @@ class CVMarker (Marker):
 
 class NoteMarker (Marker):
 	def __init__ (self,
+			name="Marker",
 			x=0,
 			y=0,
 			colour=None,
 			midiOut=None,
 			visible=False, 
 			controller=0,
-			xCh=1,
-			yCh=1,
+			xChannel=1,
+			yChannel=1,
 			xMin=0,
 			xMax=127,
 			yMin=0,
@@ -140,18 +143,22 @@ class NoteMarker (Marker):
 		self.scale = scale
 		self.stringx = stringx
 		self.strings = {i: False for i,s in enumerate(stringx)}
-		Marker.__init__ (self, x=x,
-					y=y,
-					colour=colour,
-					midiOut=midiOut,
-					visible=visible, 
-					xMin=xMin,
-					yMin=yMin,
-					xMax=xMax,
-					yMax=yMax,
-					xCh=xCh,
-					yCh=yCh,
-					colourRange=colourRange)
+		self.xMode = "Note"
+		self.yMode = "Velocity"
+		Marker.__init__ (self,
+			name=name,
+			x=x,
+			y=y,
+			colour=colour,
+			midiOut=midiOut,
+			visible=visible, 
+			xMin=xMin,
+			yMin=yMin,
+			xMax=xMax,
+			yMax=yMax,
+			xChannel=xChannel,
+			yChannel=yChannel,
+			colourRange=colourRange)
 	
 	def Disable (self):
 		self.visible = False
@@ -173,7 +180,7 @@ class NoteMarker (Marker):
 		if triggerNote == None: return
 		
 		if self.strings[triggerNote]:
-			self.midiOut.NoteOff (self.strings[triggerNote],self.xCh)
+			self.midiOut.NoteOff (self.strings[triggerNote],self.xChannel)
 			self.strings[triggerNote] = False
 			return
 			
@@ -181,12 +188,12 @@ class NoteMarker (Marker):
 		self.strings[triggerNote] = pitch
 		velocity = max (64, min (self.velocity*64,127))
 		self.lastNote = pitch
-		self.midiOut.NoteOn (pitch, velocity, channel=self.yCh)
+		self.midiOut.NoteOn (pitch, velocity, channel=self.yChannel)
 	
 	def CancelLastNote (self):
 		lastNote = self.lastNote
 		if lastNote < 1: return
-		self.midiOut.NoteOff (lastNote, channel=self.yCh)
+		self.midiOut.NoteOff (lastNote, channel=self.yChannel)
 		self.lastNote = -1
 
 class Tracker:
@@ -208,20 +215,20 @@ class Tracker:
 			colour=(0,0,255),
 			midiOut=self.midiOut,
 			#controller=0x01,
-			xCh=0x91,yCh=0x91,
+			xChannel=0x91,yChannel=0x91,
 			colourRange=redRange,
 			scale=self.scale,
 			stringx=[0.65,0.70,0.75,0.80,0.85]))
 		self.markers.append (NoteMarker ( # Green
 			colour=(0,255,0),
 			midiOut=self.midiOut,
-			xCh=0x92,yCh=0x92,
+			xChannel=0x92,yChannel=0x92,
 			scale=self.scale,
 			colourRange=greenRange))
 		self.markers.append (NoteMarker ( # Blue
 			colour=(255,0,0),
 			midiOut=self.midiOut,
-			xCh=0x93,yCh=0x93,
+			xChannel=0x93,yChannel=0x93,
 			colourRange=blueRange,
 			scale=self.scale,
 			#stringx=[0.25]))
@@ -229,7 +236,7 @@ class Tracker:
 		self.markers.append (NoteMarker ( # Yellow
 			colour=(255,255,0),
 			midiOut=self.midiOut,
-			xCh=0x94,yCh=0x94,
+			xChannel=0x94,yChannel=0x94,
 			scale=self.scale,
 			colourRange=yellowRange))
 

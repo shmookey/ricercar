@@ -19,7 +19,8 @@ By default the MIDI output channel for the red and blue markers are 2 and 4 resp
 
 Dependencies
 ------------
-Library pack for Windows: http://shmookey.net/ricercar/releases/libs.7z
+Library pack for Windows: https://www.dropbox.com/s/za4n554eq51uuvm/libpack-win32.7z
+Includes pyrtmidi, pycvgl, pyftgl, boost::python.
 
 Python 2.7 (x86) - Python runtime environment
 http://www.python.org/getit/releases/2.7/
@@ -35,6 +36,9 @@ https://code.google.com/p/pycvgl/
 
 python-rtmidi - Python bindings for MIDI I/O library RtMIDI.
 http://trac.chrisarndt.de/code/wiki/python-rtmidi
+
+boost::python - Python C API wrappers for C++. Shared library (DLL) required for pycvgl.
+http://www.boost.org/doc/libs/1_50_0/libs/python/doc/ 
 
 Running the Python version
 --------------------------

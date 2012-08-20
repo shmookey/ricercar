@@ -67,12 +67,8 @@ class Marker:
 		self.x = self.tX
 		self.y = self.tY
 
-	def Target (self, x, y, z):
-		# If 'z' (actually brightness) is less than a threshold the marker is invisible.
-		if z<BRIGHTNESS_THRESHOLD:
-			self.Disable ()
-			return
-		elif not self.visible:
+	def Target (self, x, y):
+		if not self.visible:
 			self.Enable ()
 		self.tX = x
 		self.tY = y
@@ -137,7 +133,7 @@ class NoteMarker (Marker):
 	'''
 	MODE_AUTORELEASE = 0
 	MODE_TOGGLE = 1
-	MODE_HOLD = 2
+	MODE_LEGATO = 2
 
 	def __init__ (self,
 			name="NoteMarker",
@@ -256,7 +252,9 @@ class Tracker:
 			midiOut=self.midiOut,
 			channel=0x91,
 			scale=self.scale,
-			strings=self.GenerateStrings (0.75,GUITAR)))
+			mode=NoteMarker.MODE_LEGATO,
+			strings=self.GenerateStrings (0.75,GUITAR),
+			muteOnHide=True))
 		self.markers.append (NoteMarker ( # Green
 			name="Green",
 			colour=(0,255,0),
@@ -272,6 +270,7 @@ class Tracker:
 			midiOut=self.midiOut,
 			channel=0x90,
 			scale=self.scale,
+			mode=NoteMarker.MODE_AUTORELEASE,
 			strings=self.GenerateStrings (0.25, GUITAR)))
 		self.markers.append (NoteMarker ( # Yellow
 			name="Yellow",

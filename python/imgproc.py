@@ -3,6 +3,8 @@ from constants import *
 
 from config import *
 
+class MarkerNotFound (Exception): pass
+
 class StreamProcessor:
 	def __init__ (self, window, tracker):
 		# Set up window and video capture
@@ -26,8 +28,11 @@ class StreamProcessor:
 		for i, marker in enumerate(self.tracker.markers):
 			self.colourMask.append (cv.CreateImage (GRID_SIZE, 8, 1))
 		self.extractedColours = cv.CreateImage (GRID_SIZE, 8, 3)
-
-		self.erosionElement = cv.CreateStructuringElementEx (3,3,0,0,cv.CV_SHAPE_RECT)
+		self.erodedMask = cv.CreateImage (GRID_SIZE, 8, 1)
+		
+		self.markerRegion = cv.CreateImage ((ROI_SIZE,ROI_SIZE),8,1)
+		self.roughErosion = cv.CreateStructuringElementEx (3,3,0,0,cv.CV_SHAPE_RECT)
+		self.fineErosion = cv.CreateStructuringElementEx (2,2,0,0,cv.CV_SHAPE_RECT)
 
 	def Tick (self):
 		# Grab frame and prepare for processing
@@ -55,18 +60,41 @@ class StreamProcessor:
 					(cRange.hue2[1],cRange.saturation[1],cRange.value[1]),
 					self.colourMaskTemp)
 				cv.Add (self.colourMaskTemp, mask, mask)
-			cv.Erode (mask, mask, element=self.erosionElement, iterations=2)
-			# Calculate moments
-			moments = cv.Moments (cv.GetMat(mask))
-			central = cv.GetCentralMoment (moments, 0, 0)
-			if central == 0: marker.Disable ()
-			else:
-				x = cv.GetSpatialMoment (moments, 1, 0)/central/GRID_SIZE[0]
-				y = cv.GetSpatialMoment (moments, 0, 1)/central/GRID_SIZE[1]
-				marker.Target (x, y, 0.9) # TODO: Fix this magic number
+			
+			# First pass: find approximate center to within ROI_SIZE pixels
+			cv.Erode (mask, self.erodedMask, element=self.fineErosion, iterations=4)
+			try:
+				x,y,px,py = self.FindCentre (self.erodedMask)
+			except MarkerNotFound:
+				marker.Disable ()
+				continue
 
+			# Second pass: discard outliers and recalculate centre
+			left = max (0, int(px - ROI_SIZE/2))
+			top = max (0, int(py - ROI_SIZE/2))
+			right = min (GRID_SIZE[0], left+ROI_SIZE)
+			bottom = min (GRID_SIZE[1], top+ROI_SIZE)
+			rect = (left,top,right-left,bottom-top)
+			roi = cv.GetSubRect (
+				cv.GetMat(mask),
+				rect)
+			cv.Erode (roi, roi, element=self.fineErosion, iterations=3)
+			cv.Dilate (roi, roi, element=self.roughErosion, iterations=2)
+			try:
+				subx, suby, subpx, subpy = self.FindCentre (roi)
+			except MarkerNotFound:
+				marker.Disable ()
+				continue
+			x = (left + subpx)/GRID_SIZE[0]
+			y = (top + subpy)/GRID_SIZE[1]
+
+			marker.Target (x, y) 
+
+			cv.SetImageROI (mask, rect)
+			cv.SetImageROI (self.colourMaskAll, rect)
 			cv.Add (mask, self.colourMaskAll, self.colourMaskAll)
-
+			cv.ResetImageROI (mask)
+			cv.ResetImageROI (self.colourMaskAll)
 			cv.Copy (self.gridFrame, self.extractedColours, mask)
 
 		cv.MixChannels ([self.extractedColours,self.colourMaskAll],[self.gridMasked],
@@ -74,6 +102,17 @@ class StreamProcessor:
 		self.window.NewGridFrame (self.gridFrame)
 		self.window.NewMaskedFrame (self.gridMasked)
 		cv.WaitKey (1) # there's gotta be a better way...
+
+	def FindCentre (self, image):
+		moments = cv.Moments (cv.GetMat(image))
+		central = cv.GetCentralMoment (moments, 0, 0)
+		if central == 0: raise MarkerNotFound ()
+		else:
+			px = cv.GetSpatialMoment (moments, 1, 0)/central
+			py = cv.GetSpatialMoment (moments, 0, 1)/central
+			x = px/GRID_SIZE[0]
+			y = py/GRID_SIZE[1]
+		return (x,y,px,py)
 
 	def InitVideo (self):
 		self.capture = cv.CaptureFromCAM (STREAM_DEVICE)

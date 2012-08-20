@@ -8,20 +8,33 @@ DATA_TABLE_HEADERS = [
 		["Hue",
 		"Sat",
 		"Val"]),
-#	("MIDI Mapping",
-#		["X Mode",
-#		"X Min",
-#		"X Max",
-#		"X Ch",
-#		"Y Mode",
-#		"Y Min",
-#		"Y Max",
-#		"Y Ch"])
 ]
 
+##
+#
+# Music
+#
+##
+
+UNITY = 0
+MINOR_2 = 1
+MAJOR_2 = 2
+MINOR_3 = 3
+MAJOR_3 = 4
+PERFECT_4 = 5
+TRITONE = 6
+PERFECT_5 = 7
+MINOR_6 = 8
+MAJOR_6 = 9
+MINOR_7 = 10
+MAJOR_7 = 11
+OCTAVE = 12
+
+##
 #
 # Enumerated values
 #
+##
 
 # Marker IDs
 MARKER_RED = 0
@@ -38,7 +51,6 @@ BLUE = 0
 X = 0
 Y = 1
 C = 2 # Colour
-
 
 # Frame IDs
 FRAME_NOTEXTURE = -1

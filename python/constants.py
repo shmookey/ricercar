@@ -8,15 +8,15 @@ DATA_TABLE_HEADERS = [
 		["Hue",
 		"Sat",
 		"Val"]),
-	("MIDI Mapping",
-		["X Mode",
-		"X Min",
-		"X Max",
-		"X Ch",
-		"Y Mode",
-		"Y Min",
-		"Y Max",
-		"Y Ch"])
+#	("MIDI Mapping",
+#		["X Mode",
+#		"X Min",
+#		"X Max",
+#		"X Ch",
+#		"Y Mode",
+#		"Y Min",
+#		"Y Max",
+#		"Y Ch"])
 ]
 
 #

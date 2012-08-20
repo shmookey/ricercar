@@ -14,8 +14,17 @@ class HSVColourRange:
 		self.value = value
 		self.hue2 = hue2
 
+class String:
+	''' A virtual string which may trigger musical notes when "plucked".
+	'''
+	def __init__ (self, x, noteOffset):
+		self.x = x
+		self.noteOffset = noteOffset
+		self.activeNotes = []
+		self.remainingNoteTime = [] # Parallel list to activeNotes containing note trigger times.
+
 class Marker:
-	''' An object with a position in an abstract 3-dimensional space 0->1.
+	''' An object with a position in a unit square.
 	'''
 
 	def __init__ (self,
@@ -24,13 +33,6 @@ class Marker:
 			y=0,
 			colour=None,
 			midiOut=None,
-			visible=False, 
-			xMin=0,
-			yMin=0,
-			xMax=127,
-			yMax=127,
-			xChannel=1,
-			yChannel=1,
 			colourRange=None):
 		self.name = name
 		self.x = x # Position
@@ -39,18 +41,10 @@ class Marker:
 		self.tY = y
 		self.vx = 0.0 # Velocity
 		self.vy = 0.0
-		self.visible = visible
+		self.visible = False
 		self.justAppeared = True
 		self.colour = colour
 		self.midiOut = midiOut
-		self.xChannel = xChannel
-		self.yChannel = yChannel
-		self.xMin = xMin
-		self.yMin = yMin
-		self.xMax = xMax
-		self.yMax = yMax
-
-		# Colour capture parameters - list of (min,max) tuples
 		self.colourRange = colourRange
 
 	def Enable (self):
@@ -85,32 +79,31 @@ class Marker:
 
 class CVMarker (Marker):
 	def __init__ (self,
+			name="CVMarker",
 			x=0,
 			y=0,
 			colour=None,
 			midiOut=None,
-			visible=False,
 			controller=0,
 			xChannel=1,
 			yChannel=1,
-			xMin=0,
-			xMax=127,
-			yMin=0,
-			yMax=127,
+			xRange=(0,127),
+			yRange=(0,127),
 			colourRange=None):
+		Marker.__init__ (self,
+			name=name,
+			x=x,
+			y=y,
+			colour=colour,
+			midiOut=midiOut,
+			colourRange=colourRange)
 		self.controller = controller
-		Marker.__init__ (self, x=x,
-					y=y,
-					colour=colour,
-					midiOut=midiOut,
-					visible=visible, 
-					xMin=xMin,
-					yMin=yMin,
-					xMax=xMax,
-					yMax=yMax,
-					xChannel=xChannel,
-					yChannel=yChannel,
-					colourRange=colourRange)
+		self.xMin = xMin
+		self.yMin = yMin
+		self.xMax = xMax
+		self.yMax = yMax
+		self.xChannel = xChannel
+		self.yChannel = yChannel
 
 	def Tick (self, timeElapsed):
 		Marker.Tick (self, timeElapsed)
@@ -122,79 +115,124 @@ class CVMarker (Marker):
 		self.midiOut.SendControl (mY,controller=self.controller+1,channel=1)
 
 class NoteMarker (Marker):
+	'''
+	A marker that triggers notes when it passes by ('plucks') lines called
+	strings. A NoteMarker has three modes of operation that affect how it
+	triggers notes:
+	
+	AutoRelease (default): Plucking a string fires a fixed-duration note.
+		Iff the 'polyphonic' flag is set, plucking an already-active
+		string with a new note does not cause an immediate note-off
+		message to be sent for the active notes.
+	
+	Toggle: Plucking an inactive string activates it and causes a note-on
+		message to be sent. Plucking an active string deactivates it
+		and causes a note-off message to be sent for the active note.
+		The 'polyphonic' flag is ignored.
+
+	Hold: Plucking a string activates it and causes a note-on message to
+		be sent. Iff the polyphonic flag is set, no note-off messages
+		are triggered. The string can only be deactivated by other
+		means, e.g.: a 'marker hidden' event.
+	'''
+	MODE_AUTORELEASE = 0
+	MODE_TOGGLE = 1
+	MODE_HOLD = 2
+
 	def __init__ (self,
-			name="Marker",
+			name="NoteMarker",
 			x=0,
 			y=0,
 			colour=None,
-			midiOut=None,
-			visible=False, 
-			controller=0,
-			xChannel=1,
-			yChannel=1,
-			xMin=0,
-			xMax=127,
-			yMin=0,
-			yMax=127,
 			colourRange=None,
-			scale=DiatonicScale (60,2),
-			stringx=[0.5]):
-		self.lastNote = -1
-		self.scale = scale
-		self.stringx = stringx
-		self.strings = {i: False for i,s in enumerate(stringx)}
-		self.xMode = "Note"
-		self.yMode = "Velocity"
+			midiOut=None,
+			channel=1,
+			noteRange=(0,127),
+			velocityRange=(0,127),
+			scale=None,
+			strings=[],
+			mode=MODE_AUTORELEASE,
+			muteOnHide=False,
+			polyphonic=False):
 		Marker.__init__ (self,
 			name=name,
 			x=x,
 			y=y,
 			colour=colour,
 			midiOut=midiOut,
-			visible=visible, 
-			xMin=xMin,
-			yMin=yMin,
-			xMax=xMax,
-			yMax=yMax,
-			xChannel=xChannel,
-			yChannel=yChannel,
 			colourRange=colourRange)
+		self.channel = channel
+		self.noteRange = noteRange
+		self.velocityRange = velocityRange
+		self.scale = scale
+		self.strings = strings
+		self.mode = mode
+		self.muteOnHide = muteOnHide
+		self.polyphonic = polyphonic
 	
 	def Disable (self):
+		''' The marker was not found in the processed image. '''
 		self.visible = False
-		#self.CancelLastNote ()
+		if self.muteOnHide: self.MuteActiveNotes ()
 	
 	def Tick (self, timeElapsed):
-		triggerNote = None
-		for i, stringx in enumerate (self.stringx):
+		''' Marker heartbeat function. '''
+		# Determine which strings have been plucked, if any.
+		pluckedStrings = []
+		for i, string in enumerate (self.strings):
 			if not self.justAppeared:
-				crossedLeft = (self.tX < stringx and self.x > stringx)
-				crossedRight = (self.tX > stringx and self.x < stringx)
+				crossedLeft = (self.tX < string.x and self.x > string.x)
+				crossedRight = (self.tX > string.x and self.x < string.x)
 				if crossedLeft or crossedRight:
-					triggerNote = i
+					pluckedStrings.append (i)
+
+		# Only now do we let the parent class update the marker's position. 
 		Marker.Tick (self, timeElapsed)
-		if not self.visible:
-		#	self.CancelLastNote ()
-			self.Disable ()
-			return
-		if triggerNote == None: return
 		
-		if self.strings[triggerNote]:
-			self.midiOut.NoteOff (self.strings[triggerNote],self.xChannel)
-			self.strings[triggerNote] = False
-			return
-			
-		pitch = self.scale.GetNote (self.y) + GUITAR[triggerNote]
-		self.strings[triggerNote] = pitch
-		velocity = max (64, min (self.velocity*64,127))
-		self.lastNote = pitch
-		self.midiOut.NoteOn (pitch, velocity, channel=self.yChannel)
+		if self.mode == NoteMarker.MODE_AUTORELEASE:
+			# Check if there are any active notes ready to be turned off.
+			for string in self.strings:
+				if len(string.activeNotes) == 0: continue
+				for i in range(len(string.activeNotes)):
+					string.remainingNoteTime[i] -= timeElapsed
+				while len(string.activeNotes)>0 and string.remainingNoteTime[0] <= 0:
+					# Send note-off and remove from active notes.
+					self.midiOut.NoteOff (string.activeNotes[0],self.channel)
+					string.remainingNoteTime.pop (0)
+					string.activeNotes.pop (0)
+		
+		# Only continue if the marker is visible and a string has been plucked.
+		if not self.visible or len(pluckedStrings) == 0: return
 	
-	def CancelLastNote (self):
-		lastNote = self.lastNote
-		if lastNote < 1: return
-		self.midiOut.NoteOff (lastNote, channel=self.yChannel)
-		self.lastNote = -1
+		# Handle plucked strings
+		for stringIndex in pluckedStrings:
+			string = self.strings[stringIndex]
+			if len(string.activeNotes) > 0:
+				if self.mode == NoteMarker.MODE_TOGGLE:
+					# Toggle mode: If the string is already activated, deactive it.
+					self.midiOut.NoteOff (string.activeNotes[0],self.channel)
+					string.activeNotes = []
+					continue
+				elif not self.polyphonic:
+					# Not polyphonic: mute active notes on this string.
+					for note in string.activeNotes: self.midiOut.NoteOff (note, self.channel)
+					string.activeNotes = []
+					string.remainingNoteTime = []
+
+			# Determine note from y position and string offset.
+			note = self.scale.GetNote (self.y) + string.noteOffset
+			string.activeNotes.append (note)
+			if self.mode == NoteMarker.MODE_AUTORELEASE:
+				string.remainingNoteTime.append (NOTE_DURATION)
+			velocity = max (64, min (self.velocity*64,127))
+			self.midiOut.NoteOn (note, velocity, channel=self.channel)
+
+	def MuteActiveNotes (self):
+		''' Sends note-off messages for all active notes on all strings for this marker. '''
+		for string in self.strings:
+			for note in string.activeNotes: self.midiOut.NoteOff (note, self.channel)
+			string.activeNotes = []
+			string.remainingNoteTime = []
 
 class Tracker:
 	def __init__ (self, window, midiOut):
@@ -212,50 +250,47 @@ class Tracker:
 		greenRange = HSVColourRange (hue=SN_GHUE,saturation=SN_GSAT,value=SN_GVAL)
 		yellowRange = HSVColourRange (hue=SN_YHUE,saturation=SN_YSAT,value=SN_YVAL)
 		self.markers.append (NoteMarker ( # Red
+			name="Red",
 			colour=(0,0,255),
-			midiOut=self.midiOut,
-			#controller=0x01,
-			xChannel=0x91,yChannel=0x91,
 			colourRange=redRange,
+			midiOut=self.midiOut,
+			channel=0x91,
 			scale=self.scale,
-			stringx=[0.65,0.70,0.75,0.80,0.85]))
+			strings=self.GenerateStrings (0.75,GUITAR)))
 		self.markers.append (NoteMarker ( # Green
+			name="Green",
 			colour=(0,255,0),
+			colourRange=greenRange,
 			midiOut=self.midiOut,
-			xChannel=0x92,yChannel=0x92,
+			channel=0x92,
 			scale=self.scale,
-			colourRange=greenRange))
+			strings=self.GenerateStrings (0.55,[0])))
 		self.markers.append (NoteMarker ( # Blue
+			name="Blue",
 			colour=(255,0,0),
-			midiOut=self.midiOut,
-			xChannel=0x93,yChannel=0x93,
 			colourRange=blueRange,
-			scale=self.scale,
-			#stringx=[0.25]))
-			stringx=[0.15,0.20,0.25,0.30,0.35]))
-		self.markers.append (NoteMarker ( # Yellow
-			colour=(255,255,0),
 			midiOut=self.midiOut,
-			xChannel=0x94,yChannel=0x94,
+			channel=0x90,
 			scale=self.scale,
-			colourRange=yellowRange))
+			strings=self.GenerateStrings (0.25, GUITAR)))
+		self.markers.append (NoteMarker ( # Yellow
+			name="Yellow",
+			colour=(255,255,0),
+			colourRange=yellowRange,
+			midiOut=self.midiOut,
+			channel=0x94,
+			scale=self.scale,
+			strings=self.GenerateStrings (0.45,[0])))
 
 	def Tick (self, timeElapsed):
-		# Clear feature display
-		frame = self.featureFrame
-
 		visibleMarkers = []
 		for i, marker in enumerate(self.markers):
 			# Update marker positions
 			marker.Tick (timeElapsed)
 			if not marker.visible: continue
 
-			# Annotate feature chart
-			fX = min(marker.x*frame.width,frame.width-1)
-			fY = min(marker.y*frame.height,frame.height-1)
-
-			# Send marker positions to main window
-			visibleMarkers.append (marker)
-		self.window.ShowMarkers (visibleMarkers)
-
-
+	def GenerateStrings (self, centre, offsetPattern, spacing=0.05):
+		n = len (offsetPattern)
+		width = n * spacing
+		left = centre - width/2
+		return [String(left+spacing*i, offsetPattern[i]) for i in range(n)]

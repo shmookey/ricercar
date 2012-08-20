@@ -21,7 +21,6 @@ class Scale:
 		for i,note in enumerate(relativeNotes*nOctaves):
 			if note in highlight: self.highlights.append (highlight[note])
 			else: self.highlights.append (None)
-		print self.highlights
 	def GetNote (self, position):
 		''' Gets the note corresponding to the percentage of the way through the scale. '''
 		floorPos = math.floor (position*(self.nNotes))

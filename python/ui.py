@@ -80,7 +80,9 @@ class MainWindow:
 			"%.2f" % m.y,
 			"%i-%i" % (m.colourRange.hue[0],m.colourRange.hue[1]),
 			"%i-%i" % (m.colourRange.saturation[0],m.colourRange.saturation[1]),
-			"%i-%i" % (m.colourRange.value[0],m.colourRange.value[1]),
+			"%i-%i" % (m.colourRange.value[0],m.colourRange.value[1]),]
+			for m in self.tracker.markers]
+		'''
 			m.xMode,
 			m.xMin,
 			m.xMax,
@@ -88,7 +90,7 @@ class MainWindow:
 			m.yMode,
 			m.yMin,
 			m.yMax,
-			m.yChannel] for m in self.tracker.markers]
+			m.yChannel] for m in self.tracker.markers]'''
 
 	def SetMIDIDeviceList (self, inPorts, outPorts, activeIn, activeOut):
 		self.midiInPorts = inPorts
@@ -117,37 +119,47 @@ class MainWindow:
 			bounds=Rect(400,DISPLAY_SIZE[1]-20,UI_TABLE_COLUMN_WIDTH*5,0),
 			onSelect=SelectOutputDevice)
 
-		#for i,port in enumerate(inPorts):
-		#	self.IOSelector.AddOption ("%i: %s" % (i, port),value=i)
-		
-
 	def NewRawFrame (self, frame):
-		''' Raw frame is BGR 8UC3. '''
+		''' 
+		Copies new raw stream data to this Window's frame buffer.
+		Also converts it to RGB.
+
+		Raw frame data is expected to be in OpenCV's default of BGR 8UC3. 
+		'''
 		cv.CvtColor (frame, self.frames[FRAME_RAW], cv.CV_BGR2RGB)
 
 	def NewMaskedFrame (self, frame):
-		''' Masked frame is RGB 8UC4. '''
+		'''
+		Copies new image data masked to reveal important features (the
+		'masked frame') to this Window's frame buffer.
+		Also converts it to RGB.
+
+		Masked frame data is expected to be in RGB 8UC4. '''
 		self.frames[FRAME_MASKED] = frame
 
 	def NewGridFrame (self, frame):
-		''' Grid frame is BGR 8UC3. '''
-		cv.CvtColor (frame, self.frames[FRAME_GRID], cv.CV_BGR2RGB)
+		''' 
+		Copies new image data containing the downsampled image used in
+		processing.
+		Also converts it to RGB.
 
-	def NewFeatureFrame (self, frame):
-		''' Grid frame is BGR 8UC3. '''
-		cv.CvtColor (frame, self.frames[FRAME_FEATURES], cv.CV_BGR2RGB)
+		Grid frame data is expected to be in OpenCV default BGR 8UC3.
+		'''
+		cv.CvtColor (frame, self.frames[FRAME_GRID], cv.CV_BGR2RGB)
 
 	def Render (self):
 		glClear (GL_COLOR_BUFFER_BIT)
 		glEnable (GL_TEXTURE_2D)
 		glColor4f (1.0,1.0,1.0,1.0)
-	
-		for i,frame in  enumerate (self.frames): #[(FRAME_MASKED,self.frames[FRAME_MASKED])]:
+
+		# Load new image data into OpenGL textures.
+		for i,frame in  enumerate (self.frames):
 			mat = cv.GetMat (self.frames[i])
 			img = CVGLImage (mat)
 			if i!=FRAME_MASKED: img.LoadRGBTexture (int(self.textures[i]))
 			else: img.LoadRGBATexture (int(self.textures[i]))
 
+		# Draw image data
 		self.DrawFrame (FRAME_GRID,0,0,DISPLAY_SIZE[0],DISPLAY_SIZE[1])
 		glColor4f (1.0,1.0,1.0,0.6)
 		glDisable (GL_TEXTURE_2D)
@@ -157,17 +169,11 @@ class MainWindow:
 		self.DrawFrame (FRAME_MASKED,0,0,DISPLAY_SIZE[0],DISPLAY_SIZE[1])
 		glDisable (GL_TEXTURE_2D)
 
+		# Annotate scene
 		self.DrawMarkerLocations ()
 		self.DrawNoteBoundaries ()
-		
-		glPushMatrix ()
-		glColor4f (*UI_HUD_TEXT_COLOUR)
-		glTranslatef (DISPLAY_SIZE[0]-100.0, DISPLAY_SIZE[1]-UI_TABLE_ROW_HEIGHT, 0.0)
-		self.smallFont.Render ("FPS: %i" % self.scheduler.trackerTimer.fps)
-		glPopMatrix()
-
+		self.DrawFPS ()
 		self.ConfigurationUI.rowData = self.GetConfigurationData ()
-
 		if self.showHUD: self.DrawConfigUI ()
 		if self.showIO: self.DrawIOSelector ()
 
@@ -190,8 +196,16 @@ class MainWindow:
 			self.showIO = True
 			self.showHUD = False
 
+	def DrawFPS (self):
+		glPushMatrix ()
+		glColor4f (*UI_HUD_TEXT_COLOUR)
+		glTranslatef (DISPLAY_SIZE[0]-100.0, DISPLAY_SIZE[1]-UI_TABLE_ROW_HEIGHT, 0.0)
+		self.smallFont.Render ("FPS: %i" % self.scheduler.trackerTimer.fps)
+		glPopMatrix()
+
 	def DrawMarkerLocations (self):
-		for i,marker in enumerate(self.markers):
+		for i,marker in enumerate(self.tracker.markers):
+			if not marker.visible: continue
 			markerX = int(marker.x*DISPLAY_SIZE[0])
 			markerY = int(marker.y*DISPLAY_SIZE[1])
 			colour = [marker.colour[2],marker.colour[1],marker.colour[0],1.0]
@@ -244,12 +258,12 @@ class MainWindow:
 		for marker in self.tracker.markers:
 			color = marker.colour
 			glColor3f (color[2],color[1],color[0])
-			for i, stringx in enumerate(marker.stringx):
-				if not marker.strings[i]: glLineWidth (NOTE_BOUNDARY_THICKNESS)
+			for i, string in enumerate(marker.strings):
+				if len(string.activeNotes) == 0: glLineWidth (NOTE_BOUNDARY_THICKNESS)
 				else: glLineWidth (NOTE_BOUNDARY_THICKNESS*2)
 				glBegin (GL_LINES)
-				glVertex2i (int(DISPLAY_SIZE[0]*stringx),0)
-				glVertex2i (int(DISPLAY_SIZE[0]*stringx),DISPLAY_SIZE[1])
+				glVertex2i (int(DISPLAY_SIZE[0]*string.x),0)
+				glVertex2i (int(DISPLAY_SIZE[0]*string.x),DISPLAY_SIZE[1])
 				glEnd ()
 
 	
@@ -257,121 +271,6 @@ class MainWindow:
 	def DrawConfigUI (self):
 		self.ConfigurationUI.Render ()
 		self.ConfigurationUI.Redraw ()
-		'''glColor4f (*UI_HUD_BG_COLOUR)
-		self.DrawFrame (FRAME_NOTEXTURE,0,0,DISPLAY_SIZE[0],130)
-		glColor4f (*UI_HUD_TEXT_COLOUR)
-		glPushMatrix ()
-
-		# Move to top left hand corner
-		glTranslatef (LEFT_PADDING,UI_HEIGHT-TOP_PADDING,0.0)
-		
-		# Render position heading
-		glPushMatrix ()
-		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-		self.smallFont.Render ("Position")
-		glTranslatef (0.0,-UI_TABLE_ROW_HEIGHT,0.0)
-		self.smallFont.Render ("x")
-		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-		self.smallFont.Render ("y")
-		glPopMatrix ()
-
-		# Render colour sensitivity headings
-		glPushMatrix ()
-		glTranslatef (UI_TABLE_COLUMN_WIDTH*3,0.0,0.0)
-		self.smallFont.Render ("Colour Sensitivity")
-		glTranslatef (0.0,-UI_TABLE_ROW_HEIGHT,0.0)
-		self.smallFont.Render ("Hue")
-		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-		self.smallFont.Render ("Sat")
-		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-		self.smallFont.Render ("Val")
-		glPopMatrix ()
-
-		# Render MIDI output headings
-		glPushMatrix ()
-		glTranslatef (UI_TABLE_COLUMN_WIDTH*6,0.0,0.0)
-		self.smallFont.Render ("MIDI Mapping")
-		glTranslatef (0.0,-UI_TABLE_ROW_HEIGHT,0.0)
-		self.smallFont.Render ("X Mode")
-		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-		self.smallFont.Render ("X Min")
-		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-		self.smallFont.Render ("X Max")
-		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-		self.smallFont.Render ("X Ch")
-		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-		self.smallFont.Render ("Y Mode")
-		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-		self.smallFont.Render ("Y Min")
-		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-		self.smallFont.Render ("Y Max")
-		glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-		self.smallFont.Render ("Y Ch")
-		glPopMatrix ()
-
-		# Render marker names
-		glPushMatrix ()
-		glTranslatef (0.0,-UI_TABLE_ROW_HEIGHT*2,0.0)
-		self.smallFont.Render ("Red")
-		glTranslatef (0.0,-UI_TABLE_ROW_HEIGHT,0.0)
-		self.smallFont.Render ("Green")
-		glTranslatef (0.0,-UI_TABLE_ROW_HEIGHT,0.0)
-		self.smallFont.Render ("Blue")
-		glTranslatef (0.0,-UI_TABLE_ROW_HEIGHT,0.0)
-		self.smallFont.Render ("Yellow")
-		glPopMatrix ()
-
-		# Render data
-		glPushMatrix ()
-		glTranslatef (UI_TABLE_COLUMN_WIDTH,-UI_TABLE_ROW_HEIGHT*2,0.0)
-		for marker in self.tracker.markers:
-			cRange = marker.colourRange
-			self.smallFont.Render ("%.2f" % marker.x)
-			glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-			self.smallFont.Render ("%.2f" % marker.y)
-			glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-			self.smallFont.Render ("%i-%i" % (cRange.hue[0],cRange.hue[1]))
-			glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-			self.smallFont.Render ("%i-%i" % (cRange.saturation[0],cRange.saturation[1]))
-			glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-			self.smallFont.Render ("%i-%i" % (cRange.value[0],cRange.value[1]))
-			glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-			if isinstance(marker, NoteMarker):
-				self.smallFont.Render ("Note")
-				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-				self.smallFont.Render ("%i" % marker.xMin)
-				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-				self.smallFont.Render ("%i" % marker.xMax)
-				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-				self.smallFont.Render ("%i" % (marker.xCh-144))
-				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-				self.smallFont.Render ("Velocity")
-				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-				self.smallFont.Render ("%i" % marker.yMin)
-				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-				self.smallFont.Render ("%i" % marker.yMax)
-				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-				self.smallFont.Render ("%i" % (marker.yCh-144))
-			if isinstance(marker, CVMarker):
-				self.smallFont.Render ("CV")
-				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-				self.smallFont.Render ("%i" % marker.xMin)
-				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-				self.smallFont.Render ("%i" % marker.xMax)
-				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-				self.smallFont.Render ("%i" % (marker.xCh-144))
-				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-				self.smallFont.Render ("CV")
-				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-				self.smallFont.Render ("%i" % marker.yMin)
-				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-				self.smallFont.Render ("%i" % marker.yMax)
-				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-				self.smallFont.Render ("%i" % (marker.yCh-144))
-			glTranslatef (-UI_TABLE_COLUMN_WIDTH*12,-UI_TABLE_ROW_HEIGHT,0.0)
-		glPopMatrix ()
-
-		glPopMatrix ()'''
 
 	def DrawIOSelector (self):
 		self.InputSelector.Render ()
@@ -396,10 +295,6 @@ class MainWindow:
 		glTexCoord2f (0.0,1.0)
 		glVertex2i (x,y+h)
 		glEnd ()
-
-	def ShowMarkers (self, markers):
-		self.markers = markers
-
 
 #
 # UIElement GUI Framework

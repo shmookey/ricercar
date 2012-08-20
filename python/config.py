@@ -60,6 +60,7 @@ MINOR_7 = 10
 MAJOR_7 = 11
 OCTAVE = 12
 
+NOTE_DURATION = 0.5
 
 # Colour sensitivities
 # Naming convention: [Colour][Parameter][Bound]

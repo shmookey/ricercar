@@ -1,5 +1,6 @@
 import math
 from config import *
+from constants import *
 
 PITCH_TO_NOTE = ["%s%i" % (letter,octave-2) for octave in range(10) for letter in ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]]
 

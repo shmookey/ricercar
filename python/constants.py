@@ -30,6 +30,8 @@ MINOR_7 = 10
 MAJOR_7 = 11
 OCTAVE = 12
 
+MIDI_CHANNEL_START = 0x90
+
 ##
 #
 # Enumerated values

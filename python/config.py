@@ -1,3 +1,11 @@
+''' config.py - Global configuration variables for ricercar.
+'''
+
+# These next two lines cause the ricercar window to open in the centre of the
+# screen.
+import os
+os.environ['SDL_VIDEO_CENTERED'] = '1'
+
 ##
 #
 # Input/Output
@@ -28,24 +36,12 @@ ROI_SIZE = 100 # Size of 'region of interest' used to narrow down marker locatio
 #
 ##
 
+MARKER_NOTE_DEFAULT_MODE = 0
+MARKER_NOTE_DEFAULT_DURATION = 0.5
+MARKER_CV_DEFAULT_X_CONTROLLER = 10
+MARKER_CV_DEFAULT_Y_CONTROLLER = 11
+
 GUITAR = [0,7,12,21,24]
-
-
-UNITY = 0
-MINOR_2 = 1
-MAJOR_2 = 2
-MINOR_3 = 3
-MAJOR_3 = 4
-PERFECT_4 = 5
-TRITONE = 6
-PERFECT_5 = 7
-MINOR_6 = 8
-MAJOR_6 = 9
-MINOR_7 = 10
-MAJOR_7 = 11
-OCTAVE = 12
-
-NOTE_DURATION = 0.5
 
 ##
 #
@@ -59,6 +55,7 @@ UI_TABLE_ROW_HEIGHT = 22.0
 UI_HEIGHT = 130.0
 TOP_PADDING = 20.0
 LEFT_PADDING = 10.0
+UI_FRAME_PADDING = 10
 UI_HUD_BG_COLOUR = (0.0,0.0,0.0,0.6)
 UI_HUD_TEXT_COLOUR = (1.0,1.0,1.0,1.0)
 UI_HUD_SELECTED_COLOUR = (0.0,0.25,1.0,0.6)

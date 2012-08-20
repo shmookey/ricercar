@@ -1,9 +1,12 @@
-import cv, pygame, FTGL
+''' ui.py - Main window GUI for ricercar
+'''
 
+import cv, pygame, FTGL
 from OpenGL.GL import *
 from OpenGL.GLU import *
 
-from tracker import NoteMarker, CVMarker
+from UIElement import *
+from tracker import Marker, NoteMarker, CVMarker
 from music import PITCH_TO_NOTE
 from CVGLImage import CVGLImage
 from constants import *
@@ -27,7 +30,13 @@ class MainWindow:
 		self.items = []
 		self.scheduler = scheduler
 
+		self.trackerConfigurationWindow = None
+
 	def InitVideo (self):
+		''' Initialises OpenGL.
+
+		All methods that invoke OpenGL must be made from a single thread.
+		'''
 		pygame.init ()
 		pygame.display.set_mode ((DISPLAY_SIZE[0],DISPLAY_SIZE[1]), pygame.OPENGL|pygame.DOUBLEBUF)
 		
@@ -64,34 +73,17 @@ class MainWindow:
 		''' Informs the Window of the Tracker from which it will be 
 		displaying information. 
 		
-		Causes the configuration UI elements to be regenerated.
+		Causes the configuration UI elements to be regenerated. This
+		method should only be called once.
 		'''
 		self.tracker = tracker
-		self.ConfigurationUI = DataTable (
+		self.trackerConfigurationWindow = TrackerConfigurationWindow (
+			tracker = tracker,
 			window = self,
-			headers = DATA_TABLE_HEADERS,
-			rowData = self.GetConfigurationData (),
-			bounds=Rect(0,0,DISPLAY_SIZE[0],250)) # TODO: fix magic number
+			bounds = Rect (0,0,0,0))
+		self.items.append (self.trackerConfigurationWindow)
 
-	def GetConfigurationData (self):
-		return [
-			[m.name,
-			"%.2f" % m.x,
-			"%.2f" % m.y,
-			"%i-%i" % (m.colourRange.hue[0],m.colourRange.hue[1]),
-			"%i-%i" % (m.colourRange.saturation[0],m.colourRange.saturation[1]),
-			"%i-%i" % (m.colourRange.value[0],m.colourRange.value[1]),]
-			for m in self.tracker.markers]
-		'''
-			m.xMode,
-			m.xMin,
-			m.xMax,
-			m.xChannel,
-			m.yMode,
-			m.yMin,
-			m.yMax,
-			m.yChannel] for m in self.tracker.markers]'''
-
+	
 	def SetMIDIDeviceList (self, inPorts, outPorts, activeIn, activeOut):
 		self.midiInPorts = inPorts
 		self.midiOutPorts = outPorts
@@ -147,33 +139,18 @@ class MainWindow:
 		'''
 		cv.CvtColor (frame, self.frames[FRAME_GRID], cv.CV_BGR2RGB)
 
-	def Render (self):
+	def Tick (self):
+		''' Renders the next frame.
+		
+		Must be called from the same thread as InitVideo.'''
 		glClear (GL_COLOR_BUFFER_BIT)
-		glEnable (GL_TEXTURE_2D)
-		glColor4f (1.0,1.0,1.0,1.0)
 
-		# Load new image data into OpenGL textures.
-		for i,frame in  enumerate (self.frames):
-			mat = cv.GetMat (self.frames[i])
-			img = CVGLImage (mat)
-			if i!=FRAME_MASKED: img.LoadRGBTexture (int(self.textures[i]))
-			else: img.LoadRGBATexture (int(self.textures[i]))
-
-		# Draw image data
-		self.DrawFrame (FRAME_GRID,0,0,DISPLAY_SIZE[0],DISPLAY_SIZE[1])
-		glColor4f (1.0,1.0,1.0,0.6)
-		glDisable (GL_TEXTURE_2D)
-		self.DrawFrame (FRAME_NOTEXTURE,0,0,DISPLAY_SIZE[0],DISPLAY_SIZE[1])
-		glEnable (GL_TEXTURE_2D)
-		glColor4f (1.0,1.0,1.0,1.0)
-		self.DrawFrame (FRAME_MASKED,0,0,DISPLAY_SIZE[0],DISPLAY_SIZE[1])
-		glDisable (GL_TEXTURE_2D)
-
-		# Annotate scene
+		self.LoadVideoTextures ()
+		self.DrawVideoStream ()
 		self.DrawMarkerLocations ()
 		self.DrawNoteBoundaries ()
+		self.DrawStrings ()
 		self.DrawFPS ()
-		self.ConfigurationUI.rowData = self.GetConfigurationData ()
 		if self.showHUD: self.DrawConfigUI ()
 		if self.showIO: self.DrawIOSelector ()
 
@@ -200,8 +177,29 @@ class MainWindow:
 		glPushMatrix ()
 		glColor4f (*UI_HUD_TEXT_COLOUR)
 		glTranslatef (DISPLAY_SIZE[0]-100.0, DISPLAY_SIZE[1]-UI_TABLE_ROW_HEIGHT, 0.0)
-		self.smallFont.Render ("FPS: %i" % self.scheduler.trackerTimer.fps)
+		self.smallFont.Render ("FPS: %i" % self.scheduler.frameTimer.fps)
 		glPopMatrix()
+
+	def LoadVideoTextures (self):
+		''' Load OpenCV image data into OpenGL textures. '''
+		glEnable (GL_TEXTURE_2D)
+		for i,frame in  enumerate (self.frames):
+			mat = cv.GetMat (self.frames[i])
+			img = CVGLImage (mat)
+			if i!=FRAME_MASKED: img.LoadRGBTexture (int(self.textures[i]))
+			else: img.LoadRGBATexture (int(self.textures[i]))
+
+	def DrawVideoStream (self):
+		# Draw image data
+		glColor4f (1.0,1.0,1.0,1.0)
+		self.DrawTexturedRect (FRAME_GRID,0,0,DISPLAY_SIZE[0],DISPLAY_SIZE[1])
+		glColor4f (1.0,1.0,1.0,0.6)
+		glDisable (GL_TEXTURE_2D)
+		self.DrawTexturedRect (FRAME_NOTEXTURE,0,0,DISPLAY_SIZE[0],DISPLAY_SIZE[1])
+		glEnable (GL_TEXTURE_2D)
+		glColor4f (1.0,1.0,1.0,1.0)
+		self.DrawTexturedRect (FRAME_MASKED,0,0,DISPLAY_SIZE[0],DISPLAY_SIZE[1])
+		glDisable (GL_TEXTURE_2D)
 
 	def DrawMarkerLocations (self):
 		for i,marker in enumerate(self.tracker.markers):
@@ -252,10 +250,11 @@ class MainWindow:
 			highlight = scale.highlights[i]
 			if highlight:
 				glColor4f (*highlight)
-				self.DrawFrame (FRAME_NOTEXTURE, 0, y, DISPLAY_SIZE[0], noteSize)
+				self.DrawTexturedRect (FRAME_NOTEXTURE, 0, y, DISPLAY_SIZE[0], noteSize)
 
-
+	def DrawStrings (self):
 		for marker in self.tracker.markers:
+			if not isinstance(marker, NoteMarker): continue
 			color = marker.colour
 			glColor3f (color[2],color[1],color[0])
 			for i, string in enumerate(marker.strings):
@@ -266,16 +265,14 @@ class MainWindow:
 				glVertex2i (int(DISPLAY_SIZE[0]*string.x),DISPLAY_SIZE[1])
 				glEnd ()
 
-	
-
 	def DrawConfigUI (self):
-		self.ConfigurationUI.Render ()
-		self.ConfigurationUI.Redraw ()
+		self.trackerConfigurationWindow.Tick ()
+		self.trackerConfigurationWindow.Redraw ()
 
 	def DrawIOSelector (self):
-		self.InputSelector.Render ()
+		self.InputSelector.Tick ()
 		self.InputSelector.Redraw ()
-		self.OutputSelector.Render ()
+		self.OutputSelector.Tick ()
 		self.OutputSelector.Redraw ()
 
 	def Click (self, x, y):
@@ -283,7 +280,7 @@ class MainWindow:
 		for item in self.items:
 			if item.bounds.IsPointInside (x,invY): item.Click (x,invY)
 
-	def DrawFrame (self, frameID, x, y, w, h):
+	def DrawTexturedRect (self, frameID, x, y, w, h):
 		if not frameID < 0: glBindTexture (GL_TEXTURE_2D, self.textures[frameID])
 		glBegin (GL_QUADS)
 		glTexCoord2f (0.0,0.0)
@@ -296,254 +293,320 @@ class MainWindow:
 		glVertex2i (x,y+h)
 		glEnd ()
 
-#
-# UIElement GUI Framework
-# Methods and classes
-#
 
-def LazyRender (renderFn):
-	''' Indicates that a rendering method should only continue if the
-	object has been flagged with requireRedraw, e.g.: because it displays
-	data that has changed.
-	'''
-	def LazilyRenderedFn (self):
-		if not self.requireRedraw: return
-		renderFn (self)
-	return LazilyRenderedFn
+class TrackerConfigurationWindow (BasicFrame):
+	''' A lean configuration interface for the MIDI output caused by a marker.
+	
+	Overrides the width and height of the supplied bounds.'''
 
-class Rect:
-	def __init__ (self,x,y,w,h):
-		self.x = int(x)
-		self.y = int(y)
-		self.w = int(w)
-		self.h = int(h)
-		self.xMax = int(x+w)
-		self.yMax = int(y+h)
-	def IsPointInside (self,x,y):
-		if x>self.x and x<self.xMax and y>self.y and y<self.yMax: return True
-		return False
-
-	# The 'extend' methods change the relative dimensions of the Rect.
-	def ExtendDownward (self, h):
-		hi = int (h)
-		self.h += hi
-		self.y -= hi
-	def ExtendUpward (self, h):
-		hInt = int (h)
-		self.h += hInt
-		self.yMax += hInt
-
-	def SetHeight (self, h):
-		''' Sets the height of the Rect preserving the location of the bottom-left corner.
-		'''
-		hInt = int(h)
-		self.h = hInt
-		self.yMax = self.y + hInt
-
-	def ApplyPadding (self, p):
-		pi = int(p)
-		self.x += pi
-		self.y += pi
-		self.h -= pi*2
-		self.w -= pi*2
-		self.xMax = self.x + self.w
-		self.yMax = self.y + self.h
-	def Render (self):
-		glBegin (GL_QUADS)
-		glTexCoord2f (0.0,0.0)
-		glVertex2i (self.x,self.y)
-		glTexCoord2f (1.0,0.0)
-		glVertex2i (self.xMax,self.y)
-		glTexCoord2f (1.0,1.0)
-		glVertex2i (self.xMax,self.yMax)
-		glTexCoord2f (0.0,1.0)
-		glVertex2i (self.x,self.yMax)
-		glEnd ()
-	def Clone (self):
-		return Rect (self.x,self.y,self.w,self.h)
-
-class UIElement:
 	def __init__ (self,
+			tracker = None,
 			bounds = None,
-			window = None):
-		self.window = window
-		self.requireRedraw = True
-		self.bounds = bounds
-		self.items = []
-	def Render (self):
-		raise NotImplemented ()
-	def Redraw (self):
-		''' Marks the selection group and all of its items for redrawing at next frame. '''
-		self.requireRedraw = True
-		for item in self.items: item.Redraw ()
-
-class SelectionGroup (UIElement):
-	''' Displays a list of items and allows the user to select one. '''
-	def __init__ (self,
-			label="",
-			window=None,
-			onSelect=None,
-			options=[],
-			default=None,
-			bounds=None,
-			bgColour=UI_HUD_BG_COLOUR,
-			textColour=UI_HUD_TEXT_COLOUR):
-		UIElement.__init__ (self,
-			bounds = bounds,
-			window = window)
-		self.onSelect = onSelect
-		self.label = label
-		self.innerBounds = bounds.Clone ()
-		self.innerBounds.ApplyPadding (UI_HUD_PADDING)
-		self.bgColour = bgColour
-		self.textColour = textColour
-		for i,option in options: self.AddOption (option,i)
-		self.items[default].SetBackgroundColour (UI_HUD_SELECTED_COLOUR)
-
-		# Add some height to the bounding box to accomodate the label
-		self.bounds.ExtendDownward (UI_TABLE_ROW_HEIGHT + UI_HUD_PADDING*2)
-
-	def AddOption (self, label, value):
-		nItems = len (self.items)
-		newRct = Rect (
-			self.innerBounds.x,
-			self.innerBounds.yMax - (nItems+2)*UI_TABLE_ROW_HEIGHT,
-			self.innerBounds.w,
-			UI_TABLE_ROW_HEIGHT)
-		newBtn = Button (
-			bounds = newRct,
-			label = label,
-			window = self.window,
-			onClick = self.ItemSelected,
-			value=value)
-		self.items.append (newBtn)
-
-		# Extend own bounds downwards to accomodate new item
-		if self.bounds:
-			self.bounds.ExtendDownward (UI_TABLE_ROW_HEIGHT)
-
-		self.Redraw ()
-
-	@LazyRender
-	def Render (self):
-		if self.bounds and not self.bgColour == None:
-			glColor4f (*self.bgColour)
-			self.bounds.Render ()
-		glColor4f (*self.textColour)
-		glPushMatrix ()
-		glTranslatef (self.bounds.x+UI_HUD_LEFT_PADDING, self.bounds.yMax-UI_TABLE_ROW_HEIGHT+3,0.0)
-		self.window.smallFont.Render (self.label)
-		glPopMatrix ()
-		for item in self.items:
-			item.Render ()
-		self.requireRedraw = False
-
-	def ItemSelected (self, selectedItem):
-		for item in self.items:
-			item.SetBackgroundColour (UI_HUD_BG_COLOUR)
-		selectedItem.SetBackgroundColour (UI_HUD_SELECTED_COLOUR)
-		self.onSelect (selectedItem)
-
-	def Click (self, x, y):
-		''' A click event occured within the bounds of the selector. Pass it on to the
-		appropriate button. '''
-		if not self.bounds.IsPointInside (x, y): return # Just to be safe...
-		for item in self.items:
-			if item.bounds.IsPointInside (x, y): item.Click (x, y)
-
-class Button (UIElement):
-	def __init__ (self,
-			bounds = None,
-			label = "",
 			window = None,
 			bgColour = UI_HUD_BG_COLOUR,
-			textColour = UI_HUD_TEXT_COLOUR,
-			onClick = None,
-			value = None):
-		UIElement.__init__ (self,
-			bounds = bounds,
-			window = window)
-		self.bounds.ApplyPadding (UI_HUD_PADDING)
-		self.onClick = onClick
-		self.label = label
-		self.bgColour = bgColour
-		self.textColour = textColour
-		self.value = value
-
-	@LazyRender
-	def Render (self):
-		if self.bgColour != None: glColor4f (*self.bgColour)
-		self.bounds.Render ()
-		glPushMatrix ()
-		glTranslatef (self.bounds.x+UI_HUD_LEFT_PADDING,self.bounds.y+UI_HUD_BUTTON_Y_OFFSET,0.0)
-		glColor4f (*self.textColour)
-		self.window.smallFont.Render (str(self.label))
-		glPopMatrix ()
-		self.requireRedraw = False
-	def Click (self, x, y):
-		if not self.bounds.IsPointInside (x, y): return # Just to be safe...
-		self.onClick (self)
-	def SetBackgroundColour (self, bgColour):
-		self.bgColour = bgColour
-		self.Redraw ()
-
-class DataTable (UIElement):
-	''' A table of values with headings and subheadings.
-	
-	Overrides the height specified in the bounds it is given to in order
-	to accomodate all data in the table.
-	'''
-	def __init__ (self,
-			bounds = None,
-			window = None,
-			headers = None,
-			rowData = [],
-			textColour = UI_HUD_TEXT_COLOUR,
-			bgColour = UI_HUD_BG_COLOUR):
-		''' headers is a list of tuples of the form ("Heading",["Subheading 1","Subheading 2"]) '''
-		UIElement.__init__ (self,
-			bounds = bounds,
-			window = window)
-		self.headers = headers
-		self.textColour = textColour
-		self.bgColour = bgColour
-		self.rowData = rowData
+			textColour = UI_HUD_TEXT_COLOUR):
 		
-		fullHeight = UI_TABLE_ROW_HEIGHT*(3+len(rowData))
-		self.bounds.SetHeight (fullHeight)
+		BasicFrame.__init__ (self,
+			bounds = bounds,
+			window = window,
+			bgColour = bgColour)
+		
+		self.tracker = tracker
+		self.textColour = textColour
+		self.markerSubmenus = [None] * 4
 
-	@LazyRender
-	def Render (self):
-		glColor4f (*self.bgColour)
-		self.bounds.Render ()
-		glPushMatrix ()
+		paramTable = self.paramTable = DataTable (
+			window = window,
+			headers = DATA_TABLE_HEADERS,
+			rowData = self.GetConfigurationData (),
+			bounds = Rect(bounds.x+UI_FRAME_PADDING,bounds.y,0,0),
+			bgColour = None,
+			textColour = textColour)
+		self.items.append (paramTable)
 
-		glTranslatef (self.bounds.x, self.bounds.y+self.bounds.h, 0.0)
-		glTranslatef (0.0, -UI_TABLE_ROW_HEIGHT, 0.0)
-		glColor4f (*self.textColour)
+		markerTypeButtons = self.markerTypeButtons = [CyclicButton (
+			labels = ["Note","CV"],
+			values = [Marker.TYPE_NOTE,Marker.TYPE_CV],
+			startIndex = 0,
+			window = window,
+			bounds = Rect (
+				self.paramTable.bounds.xMax,
+				self.paramTable.bounds.yMax-((i+3)*UI_TABLE_ROW_HEIGHT)-6,
+				UI_TABLE_COLUMN_WIDTH,
+				UI_TABLE_ROW_HEIGHT),
+			onClick = self.GenerateClickHandler (marker),
+			) for i, marker in enumerate(tracker.markers)]
+		self.items += markerTypeButtons
+		
+		# Open default menus on initialisation
+		for i, marker in enumerate (tracker.markers):
+			ID = marker.ID
+			button = markerTypeButtons[i]
+			newMarkerOpts = NoteMarkerConfigurationStrip (
+				marker = marker,
+				window = self.window,
+				bounds = Rect (button.bounds.xMax, button.bounds.y-1, 0, 0),
+				bgColour = None
+			)
+			self.markerSubmenus[ID] = newMarkerOpts
+			self.items.append (newMarkerOpts)
 
-		# Render headers
-		cumulativeColumnOffset = 0 # Keeps track of left offset for current header group.
-		for i, (header,subheaders) in enumerate (self.headers):
-			glPushMatrix ()
-			glTranslatef (cumulativeColumnOffset, 0.0, 0.0)
-			# Render top-level header
-			self.window.smallFont.Render ("%s" % str(header))
-			# Render subheaders
-			glTranslatef (0.0, -UI_TABLE_ROW_HEIGHT, 0.0)
-			for subheader in subheaders:
-				self.window.smallFont.Render ("%s" % str(subheader))
-				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
-			# Keep track of how far left we are.
-			cumulativeColumnOffset += len(subheaders) * UI_TABLE_COLUMN_WIDTH
-			glPopMatrix ()
+		#self.items = [self.paramTable] + self.markerTypeButtons
+		self.FitItems ()
 
-		# Render data
-		for i, row in enumerate (self.rowData):
-			glPushMatrix ()
-			glTranslatef (0.0, -UI_TABLE_ROW_HEIGHT*(i+2), 0.0)
-			for cell in row:
-				self.window.smallFont.Render ("%s" % str(cell))
-				glTranslatef (UI_TABLE_COLUMN_WIDTH, 0.0, 0.0)
-			glPopMatrix ()
-		glPopMatrix ()
+	def GetConfigurationData (self):
+		return [
+			[m.name,
+			"%.2f" % m.x,
+			"%.2f" % m.y,
+			"%i-%i" % (m.colourRange.hue[0],m.colourRange.hue[1]),
+			"%i-%i" % (m.colourRange.saturation[0],m.colourRange.saturation[1]),
+			"%i-%i" % (m.colourRange.value[0],m.colourRange.value[1]),]
+			for m in self.tracker.markers]
+
+	def Tick (self):
+		self.paramTable.rowData = self.GetConfigurationData ()
+		BasicFrame.Tick (self)
+
+	def GenerateClickHandler (self, marker):
+		def MarkerTypeClick (button):
+			newMarkerOpts = None
+			newMarker = None
+			# Remove old marker options, if any
+			oldMarkerOpts = self.markerSubmenus[marker.ID]
+			if oldMarkerOpts: self.items.remove (oldMarkerOpts)
+			
+			if button.value == Marker.TYPE_NOTE:
+				# Display new NoteMarker options
+				newMarkerOpts = NoteMarkerConfigurationStrip (
+					marker = marker,
+					window = self.window,
+					bounds = Rect (button.bounds.xMax, button.bounds.y-1, 0, 0),
+					bgColour = None)
+				newMarker = NoteMarker (
+					colour = marker.colour,
+					colourRange = marker.colourRange,
+					midiOut = marker.midiOut,
+					channel = marker.xChannel,
+					name = marker.name,
+					scale = self.tracker.scale,
+					mode = MARKER_NOTE_DEFAULT_MODE,
+					strings = self.tracker.GenerateStrings ((marker.ID+1)/8+0.5,[0]),
+					ID = marker.ID)
+			elif button.value == Marker.TYPE_CV:
+				# Display CVMarker options
+				newMarkerOpts = CVMarkerConfigurationStrip (
+					marker = marker,
+					window = self.window,
+					bounds = Rect (button.bounds.xMax, button.bounds.y-1, 0, 0),
+					bgColour = None)
+				newMarker = CVMarker (
+					colour = marker.colour,
+					colourRange = marker.colourRange,
+					midiOut = marker.midiOut,
+					xChannel = marker.channel,
+					yChannel = marker.channel,
+					name = marker.name,
+					xController = MARKER_CV_DEFAULT_X_CONTROLLER,
+					yController = MARKER_CV_DEFAULT_Y_CONTROLLER,
+					ID = marker.ID)
+			self.items.append (newMarkerOpts)
+			self.markerSubmenus[marker.ID] = newMarkerOpts
+			idx = self.tracker.markers.index (marker)
+			self.tracker.markers[idx] = newMarker
+
+			# Resize to fit new marker options
+			self.FitItems ()
+
+		return MarkerTypeClick
+
+class NoteMarkerConfigurationStrip (BasicFrame):
+	def __init__ (self,
+			marker = None,
+			window = None,
+			bounds = None,
+			bgColour = None):
+		BasicFrame.__init__ (self,
+			window = window,
+			bounds = bounds,
+			bgColour = bgColour)
+
+		self.marker = marker
+		channelButton = CyclicButton (
+			window = self.window,
+			bounds = Rect (bounds.x, bounds.y, UI_TABLE_COLUMN_WIDTH, UI_TABLE_ROW_HEIGHT),
+			labels = ["Ch: %i" % (i+1) for i in range(16)],
+			values = [MIDI_CHANNEL_START + i for i in range(16)],
+			startIndex = 0,
+			onClick = self.ChannelClick
+		)
+		markerModeButton = self.markerModeButton = CyclicButton (
+			window = self.window,
+			bounds = Rect (channelButton.bounds.xMax, bounds.y, UI_TABLE_COLUMN_WIDTH*1.5, UI_TABLE_ROW_HEIGHT),
+			labels = ["AutoRelease","Toggle","Legato"],
+			values = [NoteMarker.MODE_AUTORELEASE, NoteMarker.MODE_TOGGLE, NoteMarker.MODE_LEGATO],
+			startIndex = 0,
+			onClick = self.MarkerModeClick
+		)
+		modeOptions = self.modeOptions = AutoReleaseConfigurationStrip (
+			marker = marker,
+			window = window,
+			bounds = Rect (markerModeButton.bounds.xMax, bounds.y, 0, 0),
+			bgColour = None
+		)
+		self.items = [channelButton, markerModeButton, modeOptions]
+		self.FitItems ()
+
+	def MarkerModeClick (self, button):
+		self.items.pop () # The last item should always be these options.
+		modeOptions = None
+		if button.value == NoteMarker.MODE_AUTORELEASE:
+			modeOptions = self.modeOptions = AutoReleaseConfigurationStrip (
+				marker = self.marker,
+				window = self.window,
+				bounds = Rect (self.markerModeButton.bounds.xMax, self.bounds.y, 0, 0),
+				bgColour = None)
+			self.marker.mode = NoteMarker.MODE_AUTORELEASE
+		elif button.value == NoteMarker.MODE_LEGATO:
+			modeOptions = self.modeOptions = LegatoConfigurationStrip (
+				marker = self.marker,
+				window = self.window,
+				bounds = Rect (self.markerModeButton.bounds.xMax, self.bounds.y, 0, 0),
+				bgColour = None)
+			self.marker.mode = NoteMarker.MODE_LEGATO
+		elif button.value == NoteMarker.MODE_TOGGLE:
+			modeOptions = self.modeOptions = ToggleConfigurationStrip (
+				marker = self.marker,
+				window = self.window,
+				bounds = Rect (self.markerModeButton.bounds.xMax, self.bounds.y, 0, 0),
+				bgColour = None)
+			self.marker.mode = NoteMarker.MODE_TOGGLE
+		
+		self.items.append (modeOptions)
+		self.FitItems ()
+
+	def ChannelClick (self, button):
+		self.marker.channel = button.value
+		print self.marker.name, self.marker.channel
+
+class CVMarkerConfigurationStrip (BasicFrame):
+	def __init__ (self,
+			marker = None,
+			window = None,
+			bounds = None,
+			bgColour = None):
+		BasicFrame.__init__ (self,
+			window = window,
+			bounds = bounds,
+			bgColour = bgColour)
+
+		self.marker = marker
+		xChannelButton = CyclicButton (
+			window = self.window,
+			bounds = Rect (bounds.x, bounds.y, UI_TABLE_COLUMN_WIDTH, UI_TABLE_ROW_HEIGHT),
+			labels = ["X Ch: %i" % (i+1) for i in range(16)],
+			values = range(16),
+			startIndex = 0,
+		)
+		yChannelButton = CyclicButton (
+			window = self.window,
+			bounds = Rect (xChannelButton.bounds.xMax, bounds.y, UI_TABLE_COLUMN_WIDTH, UI_TABLE_ROW_HEIGHT),
+			labels = ["Y Ch: %i" % (i+1) for i in range(16)],
+			values = range(16),
+			startIndex = 0,
+		)
+		self.items = [xChannelButton, yChannelButton]
+		self.FitItems ()
+
+	def XChannelClick (self, button):
+		self.marker.xChannel = button.value
+	def YChannelClick (self, button):
+		self.marker.yChannel = button.value
+
+
+class AutoReleaseConfigurationStrip (BasicFrame):
+	def __init__ (self,
+			marker = None,
+			window = None,
+			bounds = None,
+			bgColour = None):
+		BasicFrame.__init__ (self,
+			window = window,
+			bounds = bounds,
+			bgColour = bgColour)
+
+		self.marker = marker
+
+		duration = self.durationButton = CyclicButton (
+			window = self.window,
+			bounds = Rect (bounds.x, bounds.y, UI_TABLE_COLUMN_WIDTH, UI_TABLE_ROW_HEIGHT),
+			labels = ["%i00ms" % (i+1) for i in range(10)],
+			values = [0.1 * (i+1) for i in range(10)],
+			startIndex = 1,
+			onClick = self.DurationClick
+		)
+		polyphonicButton = self.polyphonicButton = CyclicButton (
+			window = self.window,
+			bounds = Rect (
+				duration.bounds.xMax,
+				bounds.y,
+				UI_TABLE_COLUMN_WIDTH*1.5,
+				UI_TABLE_ROW_HEIGHT),
+			labels = ["Polyphonic","Monophonic"],
+			values = [Marker.MODE_POLYPHONIC, Marker.MODE_MONOPHONIC],
+			startIndex = 1,
+			onClick = self.PolyphonicClick
+		)
+		self.items = [duration, polyphonicButton]
+		self.FitItems ()
+	
+	def PolyphonicClick (self, button):
+		self.marker.polyphonic = button.value
+
+	def DurationClick (self, button):
+		self.marker.duration = button.value
+
+class ToggleConfigurationStrip (BasicFrame):
+	def __init__ (self,
+			marker = None,
+			window = None,
+			bounds = None,
+			bgColour = None):
+		BasicFrame.__init__ (self,
+			window = window,
+			bounds = bounds,
+			bgColour = bgColour)
+
+		# No options yet...
+		
+		self.items = []
+
+class LegatoConfigurationStrip (BasicFrame):
+	def __init__ (self,
+			marker = None,
+			window = None,
+			bounds = None,
+			bgColour = None):
+		BasicFrame.__init__ (self,
+			window = window,
+			bounds = bounds,
+			bgColour = bgColour)
+
+		self.marker = marker
+		polyphonicButton = self.polyphonicButton = CyclicButton (
+			window = self.window,
+			bounds = Rect (
+				bounds.x,
+				bounds.y,
+				UI_TABLE_COLUMN_WIDTH*1.5,
+				UI_TABLE_ROW_HEIGHT),
+			labels = ["Polyphonic","Monophonic"],
+			values = [Marker.MODE_POLYPHONIC, Marker.MODE_MONOPHONIC],
+			startIndex = 1,
+			onClick = self.PolyphonicClick
+		)
+		self.items = [polyphonicButton]
+		self.FitItems ()
+
+	def PolyphonicClick (self, button):
+		self.marker.polyphonic = button.value

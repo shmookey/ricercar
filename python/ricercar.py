@@ -1,4 +1,4 @@
-import os, sys, time, threading, traceback
+import sys, time, threading, traceback
 from constants import *
 import pygame
 
@@ -32,46 +32,40 @@ class FrameTimer:
 			self.nFrame = 0
 
 class Scheduler:
+	''' Provides the main loop functionality for ricercar. '''
 	def __init__ (self):
-		window = self.window = MainWindow (self)
+		# Initialise MIDI
 		midiOut = self.midiOut = MIDIio.MIDIDevice (MIDI_OUT_DEVICE, useInput=False)
 		midiIn = self.midiIn = MIDIio.MIDIDevice (MIDI_IN_DEVICE, useOutput=False)
+		# GUI, Tracker, Image processing
+		window = self.window = MainWindow (self)
 		self.tracker = Tracker (window, self.midiOut)
 		self.streamProc = StreamProcessor (window, self.tracker)
 		self.midiIn.SetTracker (self.tracker)
 		self.window.SetTracker (self.tracker)
 		self.window.SetMIDIDeviceList (MIDIio.midiInPorts, MIDIio.midiOutPorts,midiIn,midiOut)
 
-		#self.trackerThread = threading.Thread (target=self.TrackerLoop,name="Tracker")
 		#self.imgProcThread = threading.Thread (target=self.ImgProcLoop,name="ImgProc")
-		self.imgProcTimer = FrameTimer ()
-		self.trackerTimer = FrameTimer ()
-
+		self.frameTimer = FrameTimer ()
 		self.running = False
 
 	def Go (self):
-		self.running = True
-		self.ImgProcLoop ()
-		#self.trackerThread.start ()
-
-	def TrackerLoop (self):
-		self.imgProcThread.start ()
-		while True:
-			if not self.running: return
-
-	def ImgProcLoop (self):
+		''' Starts ricercar. '''
+		# Pre-flight initialisation for non-thread-safe tasks.
+		#self.imgProcThread.start ()
 		self.window.InitVideo ()
 		self.streamProc.InitVideo ()
-		lastFPSdisplay = 0
+		
+		self.running = True
 		while True:
 			if not self.running: return
+			# Send heartbeat
+			self.frameTimer.Tick ()
 			self.streamProc.Tick ()
-			self.imgProcTimer.Tick ()
-			self.trackerTimer.Tick ()
-			self.tracker.Tick (self.trackerTimer.tickTime)
+			self.tracker.Tick (self.frameTimer.tickTime)
 			self.midiOut.Tick ()
 			self.midiIn.Tick ()
-			self.window.Render ()
+			self.window.Tick ()
 
 			# Input loop
 			for event in pygame.event.get ():
@@ -90,5 +84,7 @@ class Scheduler:
 	def Stop (self):
 		self.running = False
 
-s = Scheduler ()
-s.Go ()
+# Start ricercar if this file has been invoked as an application.
+if __name__ == "__main__":
+	s = Scheduler ()
+	s.Go ()

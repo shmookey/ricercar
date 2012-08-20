@@ -27,13 +27,21 @@ class Marker:
 	''' An object with a position in a unit square.
 	'''
 
+	TYPE_NOTE = 0
+	TYPE_CV = 1
+
+	MODE_POLYPHONIC = 0
+	MODE_MONOPHONIC = 1
+
+	nMarkers = 0
 	def __init__ (self,
 			name="Marker",
 			x=0,
 			y=0,
 			colour=None,
 			midiOut=None,
-			colourRange=None):
+			colourRange=None,
+			ID = None):
 		self.name = name
 		self.x = x # Position
 		self.y = y
@@ -46,6 +54,11 @@ class Marker:
 		self.colour = colour
 		self.midiOut = midiOut
 		self.colourRange = colourRange
+		if ID == None:
+			self.ID = Marker.nMarkers
+			Marker.nMarkers += 1
+		else:
+			self.ID = ID
 
 	def Enable (self):
 		self.visible = True
@@ -80,24 +93,26 @@ class CVMarker (Marker):
 			y=0,
 			colour=None,
 			midiOut=None,
-			controller=0,
+			xController=MARKER_CV_DEFAULT_X_CONTROLLER,
+			yController=MARKER_CV_DEFAULT_Y_CONTROLLER,
 			xChannel=1,
 			yChannel=1,
 			xRange=(0,127),
 			yRange=(0,127),
-			colourRange=None):
+			colourRange=None,
+			ID = None):
 		Marker.__init__ (self,
 			name=name,
 			x=x,
 			y=y,
 			colour=colour,
 			midiOut=midiOut,
-			colourRange=colourRange)
-		self.controller = controller
-		self.xMin = xMin
-		self.yMin = yMin
-		self.xMax = xMax
-		self.yMax = yMax
+			colourRange=colourRange,
+			ID = ID)
+		self.xController = xController
+		self.yController = yController
+		self.xRange = xRange
+		self.yRange = yRange
 		self.xChannel = xChannel
 		self.yChannel = yChannel
 
@@ -107,8 +122,8 @@ class CVMarker (Marker):
 		# Generate MIDI output
 		mX = int(self.x*127)
 		mY = int((1-self.y)*127)
-		self.midiOut.SendControl (mX,controller=self.controller,channel=1)
-		self.midiOut.SendControl (mY,controller=self.controller+1,channel=1)
+		self.midiOut.SendControl (mX,controller=self.xController,channel=1)
+		self.midiOut.SendControl (mY,controller=self.yController,channel=1)
 
 class NoteMarker (Marker):
 	'''
@@ -149,14 +164,17 @@ class NoteMarker (Marker):
 			strings=[],
 			mode=MODE_AUTORELEASE,
 			muteOnHide=False,
-			polyphonic=False):
+			polyphonic=False,
+			ID=None,
+			duration=MARKER_NOTE_DEFAULT_DURATION):
 		Marker.__init__ (self,
 			name=name,
 			x=x,
 			y=y,
 			colour=colour,
 			midiOut=midiOut,
-			colourRange=colourRange)
+			colourRange=colourRange,
+			ID = ID)
 		self.channel = channel
 		self.noteRange = noteRange
 		self.velocityRange = velocityRange
@@ -165,6 +183,7 @@ class NoteMarker (Marker):
 		self.mode = mode
 		self.muteOnHide = muteOnHide
 		self.polyphonic = polyphonic
+		self.duration = duration
 	
 	def Disable (self):
 		''' The marker was not found in the processed image. '''
@@ -219,7 +238,7 @@ class NoteMarker (Marker):
 			note = self.scale.GetNote (self.y) + string.noteOffset
 			string.activeNotes.append (note)
 			if self.mode == NoteMarker.MODE_AUTORELEASE:
-				string.remainingNoteTime.append (NOTE_DURATION)
+				string.remainingNoteTime.append (self.duration)
 			velocity = max (64, min (self.velocity*64,127))
 			self.midiOut.NoteOn (note, velocity, channel=self.channel)
 

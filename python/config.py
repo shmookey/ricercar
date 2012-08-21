@@ -14,7 +14,7 @@ os.environ['SDL_VIDEO_CENTERED'] = '1'
 
 MIDI_OUT_DEVICE = 2 # Use 0 for the built-in GS MIDI wavetable
 MIDI_IN_DEVICE = 0
-STREAM_DEVICE = 2
+STREAM_DEVICE = 0
 STREAM_FPS = 60
 
 ###
@@ -26,6 +26,11 @@ STREAM_FPS = 60
 STREAM_SIZE = (320,240) # Webcam stream size.
 GRID_SIZE = [320,240] # Image resized to these dimensions for processing.
 DISPLAY_SIZE = [1280,960]
+STREAM_SIZES = [
+	(320,240),
+	(640,480)
+]
+STREAM_RATES = [15,30,60]
 
 ROI_SIZE = 100 # Size of 'region of interest' used to narrow down marker location.
 
@@ -56,12 +61,21 @@ UI_HEIGHT = 130.0
 TOP_PADDING = 20.0
 LEFT_PADDING = 10.0
 UI_FRAME_PADDING = 10
+UI_LABEL_PADDING = 4
+UI_BUTTON_BG_COLOUR = (0.0,0.0,0.0,0.6)
 UI_HUD_BG_COLOUR = (0.0,0.0,0.0,0.6)
 UI_HUD_TEXT_COLOUR = (1.0,1.0,1.0,1.0)
 UI_HUD_SELECTED_COLOUR = (0.0,0.25,1.0,0.6)
 UI_HUD_PADDING = 1
 UI_HUD_BUTTON_Y_OFFSET = 5
 UI_HUD_LEFT_PADDING = 5
+
+#
+# Specific window settings
+#
+
+UI_MIDI_DEVICE_BUTTON_WIDTH = 275
+UI_VIDEO_DEVICE_BUTTON_WIDTH = 150
 
 CROSSHAIR_SIZE = 200
 CROSSHAIR_THICKNESS = 2.0

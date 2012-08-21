@@ -48,27 +48,31 @@ class Rect:
 
 	# The 'extend' methods change the relative dimensions of the Rect.
 	def ExtendDownward (self, h):
-		hi = int (h)
-		self.h += hi
-		self.y -= hi
+		self.h += h
+		self.y -= h
 	def ExtendUpward (self, h):
-		hInt = int (h)
-		self.h += hInt
-		self.yMax += hInt
+		self.h += h
+		self.yMax += h
 
 	def SetHeight (self, h):
 		''' Sets the height of the Rect preserving the location of the bottom-left corner.
 		'''
-		hInt = int(h)
-		self.h = hInt
-		self.yMax = self.y + hInt
+		self.h = h
+		self.yMax = self.y + h
 
 	def SetWidth (self, w):
 		''' Sets the width of the Rect preserving the location of the bottom-left corner.
 		'''
-		wInt = int(w)
-		self.w = wInt
-		self.xMax = self.x + wInt
+		self.w = w
+		self.xMax = self.x + w
+
+	def SetCorners (self, xMin, yMin, xMax, yMax):
+		self.x = xMin
+		self.y = yMin
+		self.yMax = yMax
+		self.xMax = xMax
+		self.w = xMax - xMin
+		self.h = yMax - yMin
 
 	def ApplyPadding (self, p):
 		pi = int(p)
@@ -82,13 +86,13 @@ class Rect:
 	def Render (self):
 		glBegin (GL_QUADS)
 		glTexCoord2f (0.0,0.0)
-		glVertex2i (self.x,self.y)
+		glVertex2f (self.x,self.y)
 		glTexCoord2f (1.0,0.0)
-		glVertex2i (self.xMax,self.y)
+		glVertex2f (self.xMax,self.y)
 		glTexCoord2f (1.0,1.0)
-		glVertex2i (self.xMax,self.yMax)
+		glVertex2f (self.xMax,self.yMax)
 		glTexCoord2f (0.0,1.0)
-		glVertex2i (self.x,self.yMax)
+		glVertex2f (self.x,self.yMax)
 		glEnd ()
 	def Clone (self):
 		return Rect (self.x,self.y,self.w,self.h)
@@ -102,6 +106,7 @@ class UIElement:
 		self.requireRedraw = True
 		self.bounds = bounds
 		self.items = []
+		self.visible = True
 
 	def Tick (self):
 		''' Send heartbeat to every UI element contained within this one. '''
@@ -119,18 +124,25 @@ class UIElement:
 		for item in self.items:
 			if item.bounds.IsPointInside (x, y): item.Click (x, y)
 
-	def FitItems (self):
+	def FitItems (self, preserve=True):
 		''' Recalculates the bounds of the element to just fit around the items it contains.
 
-		Does not modify the x or y position of the element.
+		If preserve is True, does not modify the x or y position of the element.
 		'''
 		xMax = 0
 		yMax = 0
+		xMin = self.bounds.x
+		yMin = self.bounds.y
 		for item in self.items:
 			xMax = max(xMax, item.bounds.xMax)
 			yMax = max(yMax, item.bounds.yMax)
-		self.bounds.SetWidth (xMax - self.bounds.x)
-		self.bounds.SetHeight (yMax - self.bounds.y)
+			yMin = min(yMin, item.bounds.y)
+			xMin = min(xMin, item.bounds.x)
+		if preserve:
+			self.bounds.SetWidth (xMax - self.bounds.x)
+			self.bounds.SetHeight (yMax - self.bounds.y)
+		else:
+			self.bounds.SetCorners (xMin,yMin,xMax,yMax)
 
 class BasicFrame (UIElement):
 	def __init__ (self,
@@ -150,6 +162,39 @@ class BasicFrame (UIElement):
 		UIElement.Tick (self)
 		self.requireRedraw = False
 
+	def SetBackgroundColour (self, bgColour):
+		self.bgColour = bgColour
+		self.Redraw ()
+
+class Label (BasicFrame):
+	def __init__ (self,
+			text = "Label",
+			bounds = None,
+			window = None,
+			bgColour = None,
+			textColour = UI_HUD_TEXT_COLOUR,
+			font = FONT_SMALL):
+		BasicFrame.__init__ (self,
+			bounds = bounds,
+			window = window,
+			bgColour = bgColour)
+		self.font = font
+		self.text = text
+		self.textColour = textColour
+
+	@LazyRender
+	def Tick (self):
+		if self.bgColour:
+			glColor4f (*self.bgColour)
+			self.bounds.Render ()
+		glPushMatrix ()
+		glColor4f (*self.textColour)
+		glTranslatef (self.bounds.x + UI_LABEL_PADDING, self.bounds.y + UI_LABEL_PADDING, 0.0)
+		self.window.fonts[self.font].Render (self.text)
+		glPopMatrix ()
+		UIElement.Tick (self)
+		self.requireRedraw = False
+
 class SelectionGroup (UIElement):
 	''' Displays a list of items and allows the user to select one. '''
 	def __init__ (self,
@@ -165,48 +210,53 @@ class SelectionGroup (UIElement):
 			bounds = bounds,
 			window = window)
 		self.onSelect = onSelect
-		self.label = label
-		self.innerBounds = bounds.Clone ()
-		self.innerBounds.ApplyPadding (UI_HUD_PADDING)
 		self.bgColour = bgColour
 		self.textColour = textColour
+
+		titleLabel = Label (
+			text = label,
+			window = window,
+			bounds = Rect (
+				bounds.x,
+				bounds.y,
+				bounds.w,
+				UI_TABLE_ROW_HEIGHT),
+			font = FONT_SMALL,
+			bgColour = None)
+		self.items.append (titleLabel)
+		self.FitItems ()
 		for i,option in options: self.AddOption (option,i)
-		self.items[default].SetBackgroundColour (UI_HUD_SELECTED_COLOUR)
+		self.items[default+1].SetBackgroundColour (UI_HUD_SELECTED_COLOUR)
 
 		# Add some height to the bounding box to accomodate the label
-		self.bounds.ExtendDownward (UI_TABLE_ROW_HEIGHT + UI_HUD_PADDING*2)
+		#self.bounds.ExtendDownward (UI_TABLE_ROW_HEIGHT + UI_HUD_PADDING*2)
 
 	def AddOption (self, label, value):
 		nItems = len (self.items)
-		newRct = Rect (
-			self.innerBounds.x,
-			self.innerBounds.yMax - (nItems+2)*UI_TABLE_ROW_HEIGHT,
-			self.innerBounds.w,
-			UI_TABLE_ROW_HEIGHT)
 		newBtn = Button (
-			bounds = newRct,
+			bounds = Rect (
+				self.bounds.x,
+				self.bounds.y - UI_TABLE_ROW_HEIGHT,
+				self.bounds.w,
+				UI_TABLE_ROW_HEIGHT),
 			label = label,
 			window = self.window,
 			onClick = self.ItemSelected,
 			value=value)
 		self.items.append (newBtn)
+		self.FitItems (preserve=False)
 
 		# Extend own bounds downwards to accomodate new item
-		if self.bounds:
-			self.bounds.ExtendDownward (UI_TABLE_ROW_HEIGHT)
+		#if self.bounds:
+		#	self.bounds.ExtendDownward (UI_TABLE_ROW_HEIGHT)
 
-		self.Redraw ()
+		#self.Redraw ()
 
 	@LazyRender
 	def Tick (self):
 		if self.bounds and not self.bgColour == None:
 			glColor4f (*self.bgColour)
 			self.bounds.Render ()
-		glColor4f (*self.textColour)
-		glPushMatrix ()
-		glTranslatef (self.bounds.x+UI_HUD_LEFT_PADDING, self.bounds.yMax-UI_TABLE_ROW_HEIGHT+3,0.0)
-		self.window.smallFont.Render (self.label)
-		glPopMatrix ()
 		UIElement.Tick (self)
 
 	def ItemSelected (self, selectedItem):
@@ -215,44 +265,56 @@ class SelectionGroup (UIElement):
 		selectedItem.SetBackgroundColour (UI_HUD_SELECTED_COLOUR)
 		self.onSelect (selectedItem)
 
-class Button (UIElement):
+class Button (BasicFrame):
 	''' A clickable button. '''
 	def __init__ (self,
 			bounds = None,
 			label = "",
 			window = None,
-			bgColour = UI_HUD_BG_COLOUR,
+			bgColour = UI_BUTTON_BG_COLOUR,
 			textColour = UI_HUD_TEXT_COLOUR,
 			onClick = None,
 			value = None):
-		UIElement.__init__ (self,
+		BasicFrame.__init__ (self,
 			bounds = bounds,
-			window = window)
+			window = window,
+			bgColour = bgColour)
 		self.bounds.ApplyPadding (UI_HUD_PADDING)
 		self.onClick = onClick
-		self.label = label
-		self.bgColour = bgColour
 		self.textColour = textColour
 		self.value = value
+		
+		titleLabel = self.titleLabel = Label (
+			text = label,
+			window = window,
+			bounds = Rect (
+				bounds.x,
+				bounds.y,
+				UI_TABLE_COLUMN_WIDTH,
+				UI_TABLE_ROW_HEIGHT),
+			font = FONT_SMALL,
+			bgColour = None,
+			textColour = textColour)
+		self.items.append (titleLabel)
+
+	def SetLabel (self, newLabel):
+		self.titleLabel.text = newLabel
 
 	@LazyRender
 	def Tick (self):
-		if self.bgColour != None: glColor4f (*self.bgColour)
+		BasicFrame.Tick (self)
+		'''if self.bgColour != None: glColor4f (*self.bgColour)
 		self.bounds.Render ()
 		glPushMatrix ()
 		glTranslatef (self.bounds.x+UI_HUD_LEFT_PADDING,self.bounds.y+UI_HUD_BUTTON_Y_OFFSET,0.0)
 		glColor4f (*self.textColour)
-		self.window.smallFont.Render (str(self.label))
+		self.window.fonts[FONT_SMALL].Render (str(self.label))
 		glPopMatrix ()
-		self.requireRedraw = False
+		self.requireRedraw = False'''
 	
 	@FilterClick
 	def Click (self, x, y):
 		if self.onClick: self.onClick (self)
-
-	def SetBackgroundColour (self, bgColour):
-		self.bgColour = bgColour
-		self.Redraw ()
 
 class CyclicButton (Button):
 	''' A button that cycles through a list of values when clicked.
@@ -282,9 +344,8 @@ class CyclicButton (Button):
 	def Click (self, x, y):
 		self.currentIndex += 1
 		if self.currentIndex >= len(self.labels): self.currentIndex = 0
-		self.label = self.labels[self.currentIndex]
+		Button.SetLabel (self, self.labels[self.currentIndex])
 		self.value = self.values[self.currentIndex]
-		self.Redraw ()
 		Button.Click (self, x, y)
 
 class DataTable (UIElement):
@@ -332,11 +393,11 @@ class DataTable (UIElement):
 			glPushMatrix ()
 			glTranslatef (cumulativeColumnOffset, 0.0, 0.0)
 			# Render top-level header
-			self.window.smallFont.Render ("%s" % str(header))
+			self.window.fonts[FONT_SMALL].Render ("%s" % str(header))
 			# Render subheaders
 			glTranslatef (0.0, -UI_TABLE_ROW_HEIGHT, 0.0)
 			for subheader in subheaders:
-				self.window.smallFont.Render ("%s" % str(subheader))
+				self.window.fonts[FONT_SMALL].Render ("%s" % str(subheader))
 				glTranslatef (UI_TABLE_COLUMN_WIDTH,0.0,0.0)
 			# Keep track of how far left we are.
 			cumulativeColumnOffset += len(subheaders) * UI_TABLE_COLUMN_WIDTH
@@ -347,7 +408,7 @@ class DataTable (UIElement):
 			glPushMatrix ()
 			glTranslatef (0.0, -UI_TABLE_ROW_HEIGHT*(i+2), 0.0)
 			for cell in row:
-				self.window.smallFont.Render ("%s" % str(cell))
+				self.window.fonts[FONT_SMALL].Render ("%s" % str(cell))
 				glTranslatef (UI_TABLE_COLUMN_WIDTH, 0.0, 0.0)
 			glPopMatrix ()
 		glPopMatrix ()

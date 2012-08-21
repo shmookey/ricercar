@@ -9,6 +9,7 @@ from UIElement import *
 from tracker import Marker, NoteMarker, CVMarker
 from music import PITCH_TO_NOTE
 from CVGLImage import CVGLImage
+from MIDIio import MIDIDevice
 from constants import *
 from config import *
 
@@ -18,19 +19,41 @@ from config import *
 #
 
 class MainWindow:
-	def __init__ (self, scheduler):
-		self.midiInPorts = []
-		self.midiOutPorts = []
-		self.showHUD = False
-		self.showIO = False
-		self.midiInDevice = None
-		self.midiOutDevice = None
+	def __init__ (self,
+			scheduler = None,
+			tracker = None,
+			streamProcessor = None,
+			midiIn = None,
+			midiOut = None):
+
+		self.scheduler = scheduler
+		self.streamProcessor = streamProcessor
+		self.tracker = tracker
+		self.midiIn = midiIn
+		self.midiOut = midiOut
+
 		self.frames = []
 		self.textures = []
 		self.items = []
-		self.scheduler = scheduler
+		self.fonts = [None] * 2
 
-		self.trackerConfigurationWindow = None
+		trackerConf = self.trackerConfigurationWindow = TrackerConfigurationWindow (
+			tracker = tracker,
+			window = self,
+			bounds = Rect (0,0,0,0))
+		self.midiConfigurationWindow = MIDIConfigurationWindow (
+			midiIn = midiIn,
+			midiOut = midiOut,
+			window = self,
+			bounds = Rect (0, DISPLAY_SIZE[1]-UI_TABLE_ROW_HEIGHT, 0, 0))
+		self.videoConfigurationWindow = VideoConfigurationWindow (
+			streamProcessor = streamProcessor,
+			window = self,
+			bounds = Rect (0,trackerConf.bounds.yMax,0,0))
+		self.items.append (self.trackerConfigurationWindow)
+		self.items.append (self.videoConfigurationWindow)
+		self.items.append (self.midiConfigurationWindow)
+		streamProcessor.SetModeChangeCallback (self.VideoModeChanged)
 
 	def InitVideo (self):
 		''' Initialises OpenGL.
@@ -49,12 +72,6 @@ class MainWindow:
 		glEnable (GL_BLEND)
 		glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
-		self.frames.append (cv.CreateMat (STREAM_SIZE[1],STREAM_SIZE[0],cv.CV_8UC3)) # FRAME_RAW
-		self.frames.append (cv.CreateMat (GRID_SIZE[1],GRID_SIZE[0],cv.CV_8UC3)) # FRAME_GRID
-		self.frames.append (cv.CreateMat (GRID_SIZE[1],GRID_SIZE[0],cv.CV_8UC3)) # FRAME_MASKED
-		self.frames.append (cv.CreateMat (STREAM_SIZE[1],STREAM_SIZE[0],cv.CV_8UC3)) # FRAME_FEATURES
-		self.frames.append (cv.CreateMat (STREAM_SIZE[1],STREAM_SIZE[0],cv.CV_8UC4)) # FRAME_COMPOSITED
-
 		self.textures = glGenTextures (5)
 		for texture in self.textures:
 			glBindTexture (GL_TEXTURE_2D, texture)
@@ -63,81 +80,21 @@ class MainWindow:
 			glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 			glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		
-		self.largeFont = FTGL.TextureFont (FONT)
-		self.largeFont.FaceSize (18)
-		self.smallFont = FTGL.TextureFont (FONT)
-		self.smallFont.FaceSize (16)
+		self.fonts[FONT_LARGE] = FTGL.TextureFont (FONT)
+		self.fonts[FONT_LARGE].FaceSize (18)
+		self.fonts[FONT_SMALL] = FTGL.TextureFont (FONT)
+		self.fonts[FONT_SMALL].FaceSize (16)
 
-
-	def SetTracker (self, tracker):
-		''' Informs the Window of the Tracker from which it will be 
-		displaying information. 
-		
-		Causes the configuration UI elements to be regenerated. This
-		method should only be called once.
-		'''
-		self.tracker = tracker
-		self.trackerConfigurationWindow = TrackerConfigurationWindow (
-			tracker = tracker,
-			window = self,
-			bounds = Rect (0,0,0,0))
-		self.items.append (self.trackerConfigurationWindow)
-
-	
-	def SetMIDIDeviceList (self, inPorts, outPorts, activeIn, activeOut):
-		self.midiInPorts = inPorts
-		self.midiOutPorts = outPorts
-		self.midiInDevice = activeIn
-		self.midiOutDevice = activeOut
-
-		def SelectInputDevice (obj):
-			self.midiInDevice.SetInputPort (obj.value)
-		def SelectOutputDevice (obj):
-			self.midiOutDevice.SetOutputPort (obj.value)
-
-		# Generate IO selector menu items
-		self.InputSelector = SelectionGroup (
-			label = "MIDI Input",
-			window = self,
-			options=enumerate(inPorts),
-			default=activeIn.deviceID,
-			bounds=Rect(20,DISPLAY_SIZE[1]-20,UI_TABLE_COLUMN_WIDTH*5,0),
-			onSelect=SelectInputDevice)
-		self.OutputSelector = SelectionGroup (
-			label = "MIDI Output",
-			window = self,
-			options=enumerate(outPorts),
-			default=activeIn.deviceID,
-			bounds=Rect(400,DISPLAY_SIZE[1]-20,UI_TABLE_COLUMN_WIDTH*5,0),
-			onSelect=SelectOutputDevice)
-
-	def NewRawFrame (self, frame):
-		''' 
-		Copies new raw stream data to this Window's frame buffer.
-		Also converts it to RGB.
-
-		Raw frame data is expected to be in OpenCV's default of BGR 8UC3. 
-		'''
-		cv.CvtColor (frame, self.frames[FRAME_RAW], cv.CV_BGR2RGB)
-
-	def NewMaskedFrame (self, frame):
-		'''
-		Copies new image data masked to reveal important features (the
-		'masked frame') to this Window's frame buffer.
-		Also converts it to RGB.
-
-		Masked frame data is expected to be in RGB 8UC4. '''
-		self.frames[FRAME_MASKED] = frame
-
-	def NewGridFrame (self, frame):
-		''' 
-		Copies new image data containing the downsampled image used in
-		processing.
-		Also converts it to RGB.
-
-		Grid frame data is expected to be in OpenCV default BGR 8UC3.
-		'''
-		cv.CvtColor (frame, self.frames[FRAME_GRID], cv.CV_BGR2RGB)
+	def VideoModeChanged (self):
+		sp = self.streamProcessor
+		self.videoConfigurationWindow.VideoModeChanged ()
+		if sp.capture == None: return
+		self.frames = []
+		self.frames.append (cv.CreateMat (sp.streamHeight,sp.streamWidth,cv.CV_8UC3)) # FRAME_RAW
+		self.frames.append (cv.CreateMat (GRID_SIZE[1],GRID_SIZE[0],cv.CV_8UC3)) # FRAME_GRID
+		self.frames.append (cv.CreateMat (GRID_SIZE[1],GRID_SIZE[0],cv.CV_8UC3)) # FRAME_MASKED
+		self.frames.append (cv.CreateMat (sp.streamHeight,sp.streamWidth,cv.CV_8UC3)) # FRAME_FEATURES
+		self.frames.append (cv.CreateMat (sp.streamHeight,sp.streamWidth,cv.CV_8UC4)) # FRAME_COMPOSITED
 
 	def Tick (self):
 		''' Renders the next frame.
@@ -145,42 +102,43 @@ class MainWindow:
 		Must be called from the same thread as InitVideo.'''
 		glClear (GL_COLOR_BUFFER_BIT)
 
-		self.LoadVideoTextures ()
-		self.DrawVideoStream ()
-		self.DrawMarkerLocations ()
-		self.DrawNoteBoundaries ()
-		self.DrawStrings ()
+		if self.streamProcessor.capture:
+			self.LoadVideoTextures ()
+			self.DrawVideoStream ()
+			self.DrawMarkerLocations ()
+			self.DrawNoteBoundaries ()
+			self.DrawStrings ()
+		
 		self.DrawFPS ()
-		if self.showHUD: self.DrawConfigUI ()
-		if self.showIO: self.DrawIOSelector ()
+		
+		for item in self.items:
+			if not item.visible: continue
+			item.Tick ()
+			item.Redraw () # Until we have lazy rendering with VBOs
 
 		pygame.display.flip ()
 
 	def ToggleHUD (self):
-		if self.showHUD: self.showHUD = False
-		else:
-			self.showHUD = True
-			self.showIO = False
-
-	def ToggleIO (self):
-		if self.showIO:
-			self.items.remove (self.InputSelector)
-			self.items.remove (self.OutputSelector)
-			self.showIO = False
-		else:
-			self.items.append (self.InputSelector)
-			self.items.append (self.OutputSelector)
-			self.showIO = True
-			self.showHUD = False
+		for item in self.items:
+			item.visible = not item.visible
 
 	def DrawFPS (self):
 		glPushMatrix ()
 		glColor4f (*UI_HUD_TEXT_COLOUR)
 		glTranslatef (DISPLAY_SIZE[0]-100.0, DISPLAY_SIZE[1]-UI_TABLE_ROW_HEIGHT, 0.0)
-		self.smallFont.Render ("FPS: %i" % self.scheduler.frameTimer.fps)
+		self.fonts[FONT_SMALL].Render ("FPS: %i" % self.scheduler.frameTimer.fps)
 		glPopMatrix()
 
 	def LoadVideoTextures (self):
+		# Raw frame data is expected to be in OpenCV's default of BGR 8UC3. 
+		frame = self.streamProcessor.GetRawFrame ()
+		cv.CvtColor (frame, self.frames[FRAME_RAW], cv.CV_BGR2RGB)
+		# Masked frame data is expected to be in RGB 8UC4. 
+		frame = self.streamProcessor.GetMaskedFrame ()
+		self.frames[FRAME_MASKED] = frame
+		# Grid frame data is expected to be in OpenCV default BGR 8UC3.
+		frame = self.streamProcessor.GetGridFrame ()
+		cv.CvtColor (frame, self.frames[FRAME_GRID], cv.CV_BGR2RGB)
 		''' Load OpenCV image data into OpenGL textures. '''
 		glEnable (GL_TEXTURE_2D)
 		for i,frame in  enumerate (self.frames):
@@ -244,7 +202,7 @@ class MainWindow:
 
 			glPushMatrix ()
 			glTranslatef (5.0,y+20.0,0.0)
-			self.largeFont.Render ("%s" % PITCH_TO_NOTE[pitch])
+			self.fonts[FONT_LARGE].Render ("%s" % PITCH_TO_NOTE[pitch])
 			glPopMatrix ()
 
 			highlight = scale.highlights[i]
@@ -265,19 +223,10 @@ class MainWindow:
 				glVertex2i (int(DISPLAY_SIZE[0]*string.x),DISPLAY_SIZE[1])
 				glEnd ()
 
-	def DrawConfigUI (self):
-		self.trackerConfigurationWindow.Tick ()
-		self.trackerConfigurationWindow.Redraw ()
-
-	def DrawIOSelector (self):
-		self.InputSelector.Tick ()
-		self.InputSelector.Redraw ()
-		self.OutputSelector.Tick ()
-		self.OutputSelector.Redraw ()
-
 	def Click (self, x, y):
 		invY = DISPLAY_SIZE[1]-y
 		for item in self.items:
+			if not item.visible: continue
 			if item.bounds.IsPointInside (x,invY): item.Click (x,invY)
 
 	def DrawTexturedRect (self, frameID, x, y, w, h):
@@ -293,6 +242,207 @@ class MainWindow:
 		glVertex2i (x,y+h)
 		glEnd ()
 
+
+class MIDIConfigurationWindow (BasicFrame):
+	def __init__ (self,
+			midiIn = None,
+			midiOut = None,
+			bounds = None,
+			window = None,
+			bgColour = UI_HUD_BG_COLOUR,
+			textColour = UI_HUD_TEXT_COLOUR):
+		BasicFrame.__init__ (self,
+			bounds = bounds,
+			window = window,
+			bgColour = bgColour)
+
+		self.midiIn = midiIn
+		self.midiOut = midiOut
+
+		# Generate IO selector menu items
+		inputSelector = SelectionGroup (
+			label = "MIDI Input",
+			window = window,
+			options=enumerate(midiIn.inPorts),
+			default=midiIn.deviceID,
+			bounds=Rect(bounds.x,bounds.y,UI_MIDI_DEVICE_BUTTON_WIDTH,0),
+			onSelect=self.OnSelectInputDevice)
+		outputSelector = SelectionGroup (
+			label = "MIDI Output",
+			window = window,
+			options=enumerate(midiOut.outPorts),
+			default=midiOut.deviceID,
+			bounds=Rect(inputSelector.bounds.xMax,bounds.y,UI_MIDI_DEVICE_BUTTON_WIDTH,0),
+			onSelect=self.OnSelectOutputDevice)
+
+		self.items.append (inputSelector)
+		self.items.append (outputSelector)
+
+	def OnSelectInputDevice (self, obj):
+		self.midiIn.SetInputPort (obj.value)
+	def OnSelectOutputDevice (self, obj):
+		self.midiOut.SetOutputPort (obj.value)
+	
+
+class VideoConfigurationWindow (BasicFrame):
+	def __init__ (self,
+			streamProcessor = None,
+			bounds = None,
+			window = None,
+			bgColour = UI_HUD_BG_COLOUR,
+			textColour = UI_HUD_TEXT_COLOUR):
+		BasicFrame.__init__ (self,
+			bounds = bounds,
+			window = window,
+			bgColour = bgColour)
+
+		self.streamProcessor = streamProcessor
+
+		titleLabel = Label (
+			text = "Video Source",
+			bounds = Rect (
+				bounds.x,
+				bounds.y + UI_TABLE_ROW_HEIGHT*4,
+				UI_VIDEO_DEVICE_BUTTON_WIDTH,
+				UI_TABLE_ROW_HEIGHT),
+			window = window,
+			bgColour = None)
+		self.items.append (titleLabel)
+		previousVideoSource = Button (
+			label = "Previous",
+			bounds = Rect (
+				bounds.x,
+				titleLabel.bounds.y - UI_TABLE_ROW_HEIGHT,
+				UI_VIDEO_DEVICE_BUTTON_WIDTH,
+				UI_TABLE_ROW_HEIGHT),
+			window = window,
+			onClick = self.NextVideoSourceClick)
+		self.items.append (previousVideoSource)
+		nextVideoSource = Button (
+			label = "Next",
+			bounds = Rect (
+				previousVideoSource.bounds.xMax,
+				titleLabel.bounds.y - UI_TABLE_ROW_HEIGHT,
+				UI_VIDEO_DEVICE_BUTTON_WIDTH,
+				UI_TABLE_ROW_HEIGHT),
+			window = window,
+			onClick = self.NextVideoSourceClick)
+		self.items.append (nextVideoSource)
+		idLabel = Label (
+			text = "ID:",
+			bounds = Rect (
+				bounds.x,
+				nextVideoSource.bounds.y - UI_TABLE_ROW_HEIGHT,
+				UI_VIDEO_DEVICE_BUTTON_WIDTH,
+				UI_TABLE_ROW_HEIGHT),
+			window = window)
+		self.items.append (idLabel)
+		idValue = self.idValue = self.resolutionButton = Label (
+			text = "(no video)",
+			bounds = Rect (
+				idLabel.bounds.xMax,
+				nextVideoSource.bounds.y - UI_TABLE_ROW_HEIGHT,
+				UI_VIDEO_DEVICE_BUTTON_WIDTH,
+				UI_TABLE_ROW_HEIGHT),
+			window = window)
+		self.items.append (idValue)
+		resolutionLabel = Label (
+			text = "Resolution:",
+			bounds = Rect (
+				bounds.x,
+				idLabel.bounds.y - UI_TABLE_ROW_HEIGHT,
+				UI_VIDEO_DEVICE_BUTTON_WIDTH,
+				UI_TABLE_ROW_HEIGHT),
+			window = window)
+		self.items.append (resolutionLabel)
+		resolutionButton = self.resolutionButton = Button (
+			label = "(no video)",
+			bounds = Rect (
+				resolutionLabel.bounds.xMax,
+				idLabel.bounds.y - UI_TABLE_ROW_HEIGHT,
+				UI_VIDEO_DEVICE_BUTTON_WIDTH,
+				UI_TABLE_ROW_HEIGHT),
+			window = window,
+			onClick = self.VideoResolutionClick)
+		self.items.append (resolutionButton)
+		fpsLabel = Label (
+			text = "FPS:",
+			bounds = Rect (
+				bounds.x,
+				resolutionLabel.bounds.y - UI_TABLE_ROW_HEIGHT,
+				UI_VIDEO_DEVICE_BUTTON_WIDTH,
+				UI_TABLE_ROW_HEIGHT),
+			window = window)
+		self.items.append (fpsLabel)
+		fpsButton = self.fpsButton = Button (
+			label = "-",
+			bounds = Rect (
+				resolutionLabel.bounds.xMax,
+				resolutionLabel.bounds.y - UI_TABLE_ROW_HEIGHT,
+				UI_VIDEO_DEVICE_BUTTON_WIDTH,
+				UI_TABLE_ROW_HEIGHT),
+			window = window,
+			onClick = self.FPSClick)
+		self.items.append (fpsButton)
+		
+		self.FitItems ()
+
+	def NextVideoSourceClick (self, button):
+		self.streamProcessor.NextVideoSource ()
+	
+	def PreviousVideoSourceClick (self, button):
+		self.streamProcessor.PreviousVideoSource ()
+
+	def VideoModeChanged (self):
+		sp = self.streamProcessor
+		self.idValue.text = str(sp.deviceID)
+		if sp.capture == None:
+			self.resolutionButton.SetLabel ("(no video)")
+			self.fpsButton.SetLabel ("-")
+			self.resolutionButton.onClick = None
+			self.fpsButton.onClick = None
+		else:
+			label = "%ix%i" % (sp.streamWidth, sp.streamHeight)
+			self.resolutionButton.SetLabel (label)
+			if sp.streamFPS > 0:
+				self.fpsButton.SetLabel (str(sp.streamFPS))
+			else:
+				self.fpsButton.SetLabel ("-")
+			self.resolutionButton.onClick = self.VideoResolutionClick
+			self.fpsButton.onClick = self.FPSClick
+
+	def VideoResolutionClick (self, button):
+		currentRes = (self.streamProcessor.streamWidth, self.streamProcessor.streamHeight)
+		resIdx = STREAM_SIZES.index (currentRes)
+		resIdx += 1
+		if resIdx >= len(STREAM_SIZES): resIdx = 0
+		newRes = STREAM_SIZES [resIdx]
+		print "Attempting to switch to %ix%i" % newRes
+		fps = self.streamProcessor.streamFPS
+		if fps > 0:
+			self.streamProcessor.SetVideoSource (
+				deviceID = self.streamProcessor.deviceID,
+				width = newRes[0],
+				height = newRes[1],
+				fps = self.streamProcessor.streamFPS)
+		else:
+			self.streamProcessor.SetVideoSource (
+				deviceID = self.streamProcessor.deviceID,
+				width = newRes[0],
+				height = newRes[1])
+	
+	def FPSClick (self, button):
+		currentFPS = self.streamProcessor.streamFPS
+		if currentFPS == 0: return # Driver doesn't support setting resolution.
+		fpsIdx = STREAM_RATES.index (currentFPS)
+		fpsIdx += 1
+		if fpsIdx >= len(STREAM_RATES): fpsIdx = 0
+		newFPS = STREAM_RATES [fpsIdx]
+		self.streamProcessor.SetVideoSource (
+			deviceID = self.streamProcessor.deviceID,
+			width = self.streamProcessor.streamWidth,
+			height = self.streamProcessor.streamHeight,
+			fps = newFPS)
 
 class TrackerConfigurationWindow (BasicFrame):
 	''' A lean configuration interface for the MIDI output caused by a marker.

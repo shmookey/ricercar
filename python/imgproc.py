@@ -6,20 +6,18 @@ from config import *
 class MarkerNotFound (Exception): pass
 
 class StreamProcessor:
-	def __init__ (self, window, tracker):
-		# Set up window and video capture
+	def __init__ (self, tracker):
 		self.tracker = tracker
-		self.window = window
+		
+		self.deviceID = None
+		self.modeChangeCallback = None
 
-		# Initialise intermediate frames
-		self.origFrame = cv.CreateImage (STREAM_SIZE, 8, 3)
-		self.gridFrameLarge = cv.CreateImage (STREAM_SIZE, 8, 3)
+		# Initialise frames used for image processing
 		self.gridFrame = cv.CreateImage (GRID_SIZE, 8, 3)
 		self.gridFrameHSV = cv.CreateImage (GRID_SIZE, 8, 3)
 		self.gridMasked = cv.CreateImage (GRID_SIZE, 8, 4)
 		self.gridColours = cv.CreateImage (GRID_SIZE, 8, 3)
-		self.displayFrame = cv.CreateImage (STREAM_SIZE, 8, 4)
-
+		
 		# Mask frames
 		self.gridMask = cv.CreateImage (GRID_SIZE,8,1)
 		self.colourMaskTemp = cv.CreateImage (GRID_SIZE, 8, 1)
@@ -29,12 +27,13 @@ class StreamProcessor:
 			self.colourMask.append (cv.CreateImage (GRID_SIZE, 8, 1))
 		self.extractedColours = cv.CreateImage (GRID_SIZE, 8, 3)
 		self.erodedMask = cv.CreateImage (GRID_SIZE, 8, 1)
-		
 		self.markerRegion = cv.CreateImage ((ROI_SIZE,ROI_SIZE),8,1)
+		
 		self.roughErosion = cv.CreateStructuringElementEx (3,3,0,0,cv.CV_SHAPE_RECT)
 		self.fineErosion = cv.CreateStructuringElementEx (2,2,0,0,cv.CV_SHAPE_RECT)
 
 	def Tick (self):
+		if not self.capture: return
 		# Grab frame and prepare for processing
 		frame = cv.QueryFrame (self.capture)
 		cv.Flip (frame, self.origFrame,flipMode=-1)
@@ -79,7 +78,7 @@ class StreamProcessor:
 				cv.GetMat(mask),
 				rect)
 			cv.Erode (roi, roi, element=self.fineErosion, iterations=3)
-			cv.Dilate (roi, roi, element=self.roughErosion, iterations=2)
+			cv.Dilate (roi, roi, element=self.fineErosion, iterations=1)
 			try:
 				subx, suby, subpx, subpy = self.FindCentre (roi)
 			except MarkerNotFound:
@@ -99,8 +98,6 @@ class StreamProcessor:
 
 		cv.MixChannels ([self.extractedColours,self.colourMaskAll],[self.gridMasked],
 				[(0,2),(1,1),(2,0),(3,3)])
-		self.window.NewGridFrame (self.gridFrame)
-		self.window.NewMaskedFrame (self.gridMasked)
 		cv.WaitKey (1) # there's gotta be a better way...
 
 	def FindCentre (self, image):
@@ -114,9 +111,65 @@ class StreamProcessor:
 			y = py/GRID_SIZE[1]
 		return (x,y,px,py)
 
-	def InitVideo (self):
-		self.capture = cv.CaptureFromCAM (STREAM_DEVICE)
-		cv.SetCaptureProperty (self.capture, cv.CV_CAP_PROP_FPS,STREAM_FPS)
-		cv.SetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_WIDTH,STREAM_SIZE[0])
-		cv.SetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_HEIGHT,STREAM_SIZE[1])
+	def SetVideoSource (self, deviceID=STREAM_DEVICE, width=None, height=None, fps=None):
+		''' Opens a video stream, optionally requesting one or more parameters from
+		the driver.'''
+		self.deviceID = deviceID
+		# Open the stream.
+		self.capture = cv.CaptureFromCAM (deviceID)
+		# Attempt to set parameters.
+		if not (width == None or height == None):
+			cv.SetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_WIDTH,width)
+			cv.SetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_HEIGHT,height)
+		if not fps == None:
+			cv.SetCaptureProperty (self.capture, cv.CV_CAP_PROP_FPS,STREAM_FPS)
+		# Now get the actual parameters used:
+		rwidth = self.streamWidth = int(cv.GetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_WIDTH))
+		rheight = self.streamHeight = int(cv.GetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_HEIGHT))
+		fps = self.streamFPS = int(cv.GetCaptureProperty (self.capture, cv.CV_CAP_PROP_FPS))
+		if rwidth == 0 or rheight == 0:
+			self.capture = None
+			self.modeChangeCallback ()
+			return
+		
+		dimensions = (rwidth, rheight)
+		if not dimensions in STREAM_SIZES:
+			STREAM_SIZES.append (dimensions)
+			print "Detected unsupported resolution %ix%i" % (width,height)
 
+		# Initialise frame buffer
+		self.origFrame = cv.CreateImage (dimensions, 8, 3)
+		
+		self.modeChangeCallback ()
+
+	def NextVideoSource (self):
+		if self.deviceID == None: self.deviceID = 0
+		else: self.deviceID += 1
+		self.SetVideoSource (deviceID = self.deviceID)
+
+	def PreviousVideoSource (self):
+		if self.deviceID == None: self.deviceID = 0
+		elif self.deviceID > 0: self.deviceID -= 1
+		else: return
+		self.SetVideoSource (deviceID = self.deviceID)
+
+	def GetRawFrame (self):
+		''' Gets a reference to the current raw unprocessed frame data.
+
+		Not thread safe.'''
+		return self.origFrame
+
+	def GetGridFrame (self):
+		''' Gets a reference to the current shrunk-for-processing data.
+
+		Not thread safe.'''
+		return self.gridFrame
+
+	def GetMaskedFrame (self):
+		''' Gets a reference to the current processed, feature-masked data.
+
+		Not thread safe.'''
+		return self.gridMasked
+
+	def SetModeChangeCallback (self, callback):
+		self.modeChangeCallback = callback

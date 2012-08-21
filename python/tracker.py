@@ -250,9 +250,8 @@ class NoteMarker (Marker):
 			string.remainingNoteTime = []
 
 class Tracker:
-	def __init__ (self, window, midiOut):
+	def __init__ (self, midiOut):
 		self.midiOut = midiOut
-		self.window = window
 
 		self.featureFrame = cv.CreateImage (GRID_SIZE, 8, 3)
 		self.featureDisplayFrame = cv.CreateImage (STREAM_SIZE, 8, 3)

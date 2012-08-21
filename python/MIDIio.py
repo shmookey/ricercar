@@ -5,10 +5,9 @@ from MIDIConstants import *
 from constants import *
 import config
 
-midiInPorts = rtmidi.MidiIn().get_ports ()
-midiOutPorts = rtmidi.MidiOut().get_ports ()
-
 class MIDIDevice:
+	inPorts = [str(portName) for portName in rtmidi.MidiIn().get_ports ()]
+	outPorts = [str(portName) for portName in rtmidi.MidiOut().get_ports ()]
 	def __init__ (self, deviceID, useInput=True, useOutput=True):
 		self.activeNotes = []
 		self.tracker = None

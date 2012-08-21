@@ -8,8 +8,6 @@ from tracker import Marker, Tracker
 import MIDIio
 from ui import MainWindow
 
-os.environ['SDL_VIDEO_CENTERED'] = '1'
-
 class FrameTimer:
 	def __init__ (self):
 		self.nFrame = 0
@@ -38,12 +36,15 @@ class Scheduler:
 		midiOut = self.midiOut = MIDIio.MIDIDevice (MIDI_OUT_DEVICE, useInput=False)
 		midiIn = self.midiIn = MIDIio.MIDIDevice (MIDI_IN_DEVICE, useOutput=False)
 		# GUI, Tracker, Image processing
-		window = self.window = MainWindow (self)
-		self.tracker = Tracker (window, self.midiOut)
-		self.streamProc = StreamProcessor (window, self.tracker)
+		self.tracker = Tracker (self.midiOut)
 		self.midiIn.SetTracker (self.tracker)
-		self.window.SetTracker (self.tracker)
-		self.window.SetMIDIDeviceList (MIDIio.midiInPorts, MIDIio.midiOutPorts,midiIn,midiOut)
+		self.streamProc = StreamProcessor (self.tracker)
+		window = self.window = MainWindow (
+			scheduler = self,
+			tracker = self.tracker,
+			streamProcessor = self.streamProc,
+			midiIn = midiIn,
+			midiOut = midiOut)
 
 		#self.imgProcThread = threading.Thread (target=self.ImgProcLoop,name="ImgProc")
 		self.frameTimer = FrameTimer ()
@@ -54,7 +55,7 @@ class Scheduler:
 		# Pre-flight initialisation for non-thread-safe tasks.
 		#self.imgProcThread.start ()
 		self.window.InitVideo ()
-		self.streamProc.InitVideo ()
+		self.streamProc.SetVideoSource (deviceID=STREAM_DEVICE)
 		
 		self.running = True
 		while True:
@@ -73,8 +74,6 @@ class Scheduler:
 					# Tab toggles HUD display
 					if event.key == pygame.K_TAB:
 						self.window.ToggleHUD ()
-					elif event.key == pygame.K_BACKQUOTE:
-						self.window.ToggleIO ()
 				elif event.type == pygame.MOUSEBUTTONUP:
 					glX, glY = event.pos
 					self.window.Click (glX, glY)

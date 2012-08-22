@@ -4,6 +4,9 @@
 import cv, pygame, FTGL
 from OpenGL.GL import *
 from OpenGL.GLU import *
+from OpenGL.GL.ARB.framebuffer_object import *
+from OpenGL.GL.EXT.framebuffer_object import *
+from ctypes import *
 
 from UIElement import *
 from tracker import Marker, NoteMarker, CVMarker
@@ -33,7 +36,6 @@ class MainWindow:
 		self.midiOut = midiOut
 
 		self.frames = []
-		self.textures = []
 		self.items = []
 		self.fonts = [None] * 2
 
@@ -60,20 +62,52 @@ class MainWindow:
 
 		All methods that invoke OpenGL must be made from a single thread.
 		'''
+		w, h = DISPLAY_SIZE
 		pygame.init ()
-		pygame.display.set_mode ((DISPLAY_SIZE[0],DISPLAY_SIZE[1]), pygame.OPENGL|pygame.DOUBLEBUF)
+		pygame.display.set_mode ((w,h), pygame.OPENGL|pygame.DOUBLEBUF)
 		
 		glClearColor(0.0,0.0,0.0,0.0)
 		glColor3f (1.0,1.0,1.0)
 		glPointSize (4.0)
 		glMatrixMode (GL_PROJECTION)
 		glLoadIdentity ()
-		gluOrtho2D (0.0, DISPLAY_SIZE[0], 0.0, DISPLAY_SIZE[1])
+		gluOrtho2D (0.0, w, 0.0, h)
 		glEnable (GL_BLEND)
 		glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
-		self.textures = glGenTextures (5)
-		for texture in self.textures:
+		# Create FBO object
+		#self.uiFBO = glGenFramebuffers(1)
+		#glBindFramebuffer(GL_FRAMEBUFFER, self.uiFBO)
+		# Set FBO texture parameters
+		#self.uiTexture = glGenTextures (1)
+		#glBindTexture (GL_TEXTURE_2D, self.uiTexture)
+		#glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		#glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+		#glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		#glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		#glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,w,h,0,GL_RGBA,GL_UNSIGNED_INT,None)
+		# Set up FBO colour buffer
+		#color = glGenRenderbuffers(1)
+                #glBindRenderbuffer( GL_RENDERBUFFER, color )
+                #glRenderbufferStorage( GL_RENDERBUFFER, GL_RGB, w, h)
+                #glFramebufferRenderbuffer( GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, color )
+                #glBindRenderbuffer( GL_RENDERBUFFER, 0 )
+		# Configure other FBO options
+		#glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, self.uiTexture, 0)
+		# Unbind FBO
+		#glBindFramebuffer (GL_FRAMEBUFFER, 0)
+
+		
+		#glFramebufferTexture2D(
+                #	GL_FRAMEBUFFER,
+                #	GL_DEPTH_ATTACHMENT,
+                #	GL_TEXTURE_2D,
+                #	self.uiTexture,
+                #	0 #mip-map level...
+            	#)
+
+		self.frameTextures = glGenTextures (2)
+		for texture in self.frameTextures:
 			glBindTexture (GL_TEXTURE_2D, texture)
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
 			glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
@@ -89,25 +123,25 @@ class MainWindow:
 		sp = self.streamProcessor
 		self.videoConfigurationWindow.VideoModeChanged ()
 		if sp.capture == None: return
-		self.frames = []
-		self.frames.append (cv.CreateMat (sp.streamHeight,sp.streamWidth,cv.CV_8UC3)) # FRAME_RAW
-		self.frames.append (cv.CreateMat (GRID_SIZE[1],GRID_SIZE[0],cv.CV_8UC3)) # FRAME_GRID
-		self.frames.append (cv.CreateMat (GRID_SIZE[1],GRID_SIZE[0],cv.CV_8UC3)) # FRAME_MASKED
-		self.frames.append (cv.CreateMat (sp.streamHeight,sp.streamWidth,cv.CV_8UC3)) # FRAME_FEATURES
-		self.frames.append (cv.CreateMat (sp.streamHeight,sp.streamWidth,cv.CV_8UC4)) # FRAME_COMPOSITED
+		self.gridFrame  = (cv.CreateMat (GRID_SIZE[1],GRID_SIZE[0],cv.CV_8UC3)) # FRAME_GRID
+		self.maskedFrame = (cv.CreateMat (GRID_SIZE[1],GRID_SIZE[0],cv.CV_8UC3)) # FRAME_MASKED
 
 	def Tick (self):
 		''' Renders the next frame.
 		
 		Must be called from the same thread as InitVideo.'''
-		glClear (GL_COLOR_BUFFER_BIT)
+		#glClear (GL_COLOR_BUFFER_BIT)
 
-		if self.streamProcessor.capture:
-			self.LoadVideoTextures ()
-			self.DrawVideoStream ()
-			self.DrawMarkerLocations ()
-			self.DrawNoteBoundaries ()
-			self.DrawStrings ()
+		glColor4f (1.0,1.0,1.0,1.0)
+		#if self.streamProcessor.capture:
+		self.LoadVideoTextures ()
+		self.DrawVideoStream ()
+	
+		#glBindTexture (GL_TEXTURE_2D, self.uiTexture)
+		#self.DrawTexturedRect (FRAME_NOTEXTURE, 0, 0, DISPLAY_SIZE[0], DISPLAY_SIZE[1])
+		self.DrawMarkerLocations ()
+		self.DrawNoteBoundaries ()
+		self.DrawStrings ()
 		
 		self.DrawFPS ()
 		
@@ -131,21 +165,21 @@ class MainWindow:
 
 	def LoadVideoTextures (self):
 		# Raw frame data is expected to be in OpenCV's default of BGR 8UC3. 
-		frame = self.streamProcessor.GetRawFrame ()
-		cv.CvtColor (frame, self.frames[FRAME_RAW], cv.CV_BGR2RGB)
+		#frame = self.streamProcessor.GetRawFrame ()
+		#cv.CvtColor (frame, self.frames[FRAME_RAW], cv.CV_BGR2RGB)
 		# Masked frame data is expected to be in RGB 8UC4. 
-		frame = self.streamProcessor.GetMaskedFrame ()
-		self.frames[FRAME_MASKED] = frame
+		maskedFrame = self.streamProcessor.GetMaskedFrame ()
 		# Grid frame data is expected to be in OpenCV default BGR 8UC3.
 		frame = self.streamProcessor.GetGridFrame ()
-		cv.CvtColor (frame, self.frames[FRAME_GRID], cv.CV_BGR2RGB)
+		cv.CvtColor (frame, self.gridFrame, cv.CV_BGR2RGB)
 		''' Load OpenCV image data into OpenGL textures. '''
 		glEnable (GL_TEXTURE_2D)
-		for i,frame in  enumerate (self.frames):
-			mat = cv.GetMat (self.frames[i])
-			img = CVGLImage (mat)
-			if i!=FRAME_MASKED: img.LoadRGBTexture (int(self.textures[i]))
-			else: img.LoadRGBATexture (int(self.textures[i]))
+		mat = cv.GetMat (self.gridFrame)
+		img = CVGLImage (mat)
+		img.LoadRGBTexture (int(self.frameTextures[FRAME_GRID]))
+		mat = cv.GetMat (maskedFrame)
+		img = CVGLImage (mat)
+		img.LoadRGBATexture (int(self.frameTextures[FRAME_MASKED]))
 
 	def DrawVideoStream (self):
 		# Draw image data
@@ -188,7 +222,9 @@ class MainWindow:
 			glEnd ()
 
 	def DrawNoteBoundaries (self):
-		glColor4f (1.0,1.0,1.0,0.75)
+		# Set up rendering to framebuffer
+		#glBindTexture (GL_TEXTURE_2D, 0)
+		#glBindFramebuffer(GL_FRAMEBUFFER, self.uiFBO )
 		glLineWidth (NOTE_BOUNDARY_THICKNESS)
 		# For now we'll test by drawing two pentatonic ocatves - 10 notes
 		noteSize = int(DISPLAY_SIZE[1] / self.tracker.scale.nNotes)
@@ -209,6 +245,8 @@ class MainWindow:
 			if highlight:
 				glColor4f (*highlight)
 				self.DrawTexturedRect (FRAME_NOTEXTURE, 0, y, DISPLAY_SIZE[0], noteSize)
+		# Done rendering to framebuffer
+		#glBindFramebuffer(GL_FRAMEBUFFER, 0)	
 
 	def DrawStrings (self):
 		for marker in self.tracker.markers:
@@ -230,7 +268,7 @@ class MainWindow:
 			if item.bounds.IsPointInside (x,invY): item.Click (x,invY)
 
 	def DrawTexturedRect (self, frameID, x, y, w, h):
-		if not frameID < 0: glBindTexture (GL_TEXTURE_2D, self.textures[frameID])
+		if not frameID < 0: glBindTexture (GL_TEXTURE_2D, self.frameTextures[frameID])
 		glBegin (GL_QUADS)
 		glTexCoord2f (0.0,0.0)
 		glVertex2i (x,y)
@@ -258,31 +296,44 @@ class MIDIConfigurationWindow (BasicFrame):
 
 		self.midiIn = midiIn
 		self.midiOut = midiOut
-
+		inputMode = SelectionGroup.MODE_NORMAL
+		outputMode = SelectionGroup.MODE_NORMAL
+		if midiIn.state == MIDIDevice.STATE_ERROR: inputMode = SelectionGroup.MODE_ERROR
+		if midiOut.state == MIDIDevice.STATE_ERROR: outputMode = SelectionGroup.MODE_ERROR
 		# Generate IO selector menu items
-		inputSelector = SelectionGroup (
+		self.inputSelector = SelectionGroup (
 			label = "MIDI Input",
 			window = window,
 			options=enumerate(midiIn.inPorts),
 			default=midiIn.deviceID,
 			bounds=Rect(bounds.x,bounds.y,UI_MIDI_DEVICE_BUTTON_WIDTH,0),
-			onSelect=self.OnSelectInputDevice)
-		outputSelector = SelectionGroup (
+			onSelect=self.OnSelectInputDevice,
+			mode = inputMode)
+		self.outputSelector = SelectionGroup (
 			label = "MIDI Output",
 			window = window,
 			options=enumerate(midiOut.outPorts),
 			default=midiOut.deviceID,
-			bounds=Rect(inputSelector.bounds.xMax,bounds.y,UI_MIDI_DEVICE_BUTTON_WIDTH,0),
-			onSelect=self.OnSelectOutputDevice)
+			bounds=Rect(self.inputSelector.bounds.xMax,bounds.y,UI_MIDI_DEVICE_BUTTON_WIDTH,0),
+			onSelect=self.OnSelectOutputDevice,
+			mode = outputMode)
 
-		self.items.append (inputSelector)
-		self.items.append (outputSelector)
+		self.items.append (self.inputSelector)
+		self.items.append (self.outputSelector)
+		self.FitItems (preserve=False)
 
 	def OnSelectInputDevice (self, obj):
-		self.midiIn.SetInputPort (obj.value)
+		self.midiIn.OpenPort (obj.value)
+		if self.midiIn.state == MIDIDevice.STATE_ERROR:
+			self.inputSelector.SetMode (SelectionGroup.MODE_ERROR)
+		else:
+			self.inputSelector.SetMode (SelectionGroup.MODE_NORMAL)
 	def OnSelectOutputDevice (self, obj):
-		self.midiOut.SetOutputPort (obj.value)
-	
+		self.midiOut.OpenPort (obj.value)
+		if self.midiOut.state == MIDIDevice.STATE_ERROR:
+			self.outputSelector.SetMode (SelectionGroup.MODE_ERROR)
+		else:
+			self.outputSelector.SetMode (SelectionGroup.MODE_NORMAL)
 
 class VideoConfigurationWindow (BasicFrame):
 	def __init__ (self,
@@ -316,7 +367,7 @@ class VideoConfigurationWindow (BasicFrame):
 				UI_VIDEO_DEVICE_BUTTON_WIDTH,
 				UI_TABLE_ROW_HEIGHT),
 			window = window,
-			onClick = self.NextVideoSourceClick)
+			onClick = self.PreviousVideoSourceClick)
 		self.items.append (previousVideoSource)
 		nextVideoSource = Button (
 			label = "Next",
@@ -337,7 +388,7 @@ class VideoConfigurationWindow (BasicFrame):
 				UI_TABLE_ROW_HEIGHT),
 			window = window)
 		self.items.append (idLabel)
-		idValue = self.idValue = self.resolutionButton = Label (
+		idValue = self.idValue = Label (
 			text = "(no video)",
 			bounds = Rect (
 				idLabel.bounds.xMax,

@@ -111,22 +111,21 @@ class StreamProcessor:
 			y = py/GRID_SIZE[1]
 		return (x,y,px,py)
 
-	def SetVideoSource (self, deviceID=STREAM_DEVICE, width=None, height=None, fps=None):
+	def SetVideoSource (self, deviceID=STREAM_DEVICE, width=STREAM_SIZE[0], height=STREAM_SIZE[1], fps=STREAM_FPS):
 		''' Opens a video stream, optionally requesting one or more parameters from
 		the driver.'''
 		self.deviceID = deviceID
 		# Open the stream.
 		self.capture = cv.CaptureFromCAM (deviceID)
 		# Attempt to set parameters.
-		if not (width == None or height == None):
-			cv.SetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_WIDTH,width)
-			cv.SetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_HEIGHT,height)
-		if not fps == None:
-			cv.SetCaptureProperty (self.capture, cv.CV_CAP_PROP_FPS,STREAM_FPS)
+		cv.SetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_WIDTH,width)
+		cv.SetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_HEIGHT,height)
+		#if not fps == None:
+		cv.SetCaptureProperty (self.capture, cv.CV_CAP_PROP_FPS,fps)
 		# Now get the actual parameters used:
 		rwidth = self.streamWidth = int(cv.GetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_WIDTH))
 		rheight = self.streamHeight = int(cv.GetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_HEIGHT))
-		fps = self.streamFPS = int(cv.GetCaptureProperty (self.capture, cv.CV_CAP_PROP_FPS))
+		self.streamFPS = int(cv.GetCaptureProperty (self.capture, cv.CV_CAP_PROP_FPS))
 		if rwidth == 0 or rheight == 0:
 			self.capture = None
 			self.modeChangeCallback ()

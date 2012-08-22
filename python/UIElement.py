@@ -122,7 +122,7 @@ class UIElement:
 		''' A click event occured within the bounds of the selector. Pass it on to the
 		appropriate button. '''
 		for item in self.items:
-			if item.bounds.IsPointInside (x, y): item.Click (x, y)
+			item.Click (x, y)
 
 	def FitItems (self, preserve=True):
 		''' Recalculates the bounds of the element to just fit around the items it contains.
@@ -197,6 +197,9 @@ class Label (BasicFrame):
 
 class SelectionGroup (UIElement):
 	''' Displays a list of items and allows the user to select one. '''
+	MODE_NORMAL = 0
+	MODE_ERROR = 1
+	MODE_DISABLED = 2
 	def __init__ (self,
 			label="",
 			window=None,
@@ -205,14 +208,18 @@ class SelectionGroup (UIElement):
 			default=None,
 			bounds=None,
 			bgColour=UI_HUD_BG_COLOUR,
-			textColour=UI_HUD_TEXT_COLOUR):
+			textColour=UI_HUD_TEXT_COLOUR,
+			mode=MODE_NORMAL):
 		UIElement.__init__ (self,
 			bounds = bounds,
 			window = window)
 		self.onSelect = onSelect
 		self.bgColour = bgColour
 		self.textColour = textColour
+		self.mode = mode
+		self.selectedItemID = default
 
+		self.optionItems = []
 		titleLabel = Label (
 			text = label,
 			window = window,
@@ -226,10 +233,26 @@ class SelectionGroup (UIElement):
 		self.items.append (titleLabel)
 		self.FitItems ()
 		for i,option in options: self.AddOption (option,i)
-		self.items[default+1].SetBackgroundColour (UI_HUD_SELECTED_COLOUR)
+		if not default == None:
+			self.SelectItem (default)
+			#self.items[default+1].SetBackgroundColour (UI_HUD_SELECTED_COLOUR)
+
 
 		# Add some height to the bounding box to accomodate the label
 		#self.bounds.ExtendDownward (UI_TABLE_ROW_HEIGHT + UI_HUD_PADDING*2)
+
+	def SelectItem (self, optionID):
+		if not self.selectedItemID == None:
+			self.optionItems[self.selectedItemID].SetBackgroundColour (UI_SELECTGROUP_ITEM_NORMAL)
+		self.selectedItemID = optionID
+		if self.mode == SelectionGroup.MODE_NORMAL:
+			self.optionItems[optionID].SetBackgroundColour (UI_SELECTGROUP_ITEM_SELECTED)
+		elif self.mode == SelectionGroup.MODE_ERROR:
+			self.optionItems[optionID].SetBackgroundColour (UI_SELECTGROUP_ITEM_ERROR)
+
+	def SetMode (self, mode):
+		self.mode = mode
+		self.SelectItem (self.selectedItemID)
 
 	def AddOption (self, label, value):
 		nItems = len (self.items)
@@ -244,6 +267,7 @@ class SelectionGroup (UIElement):
 			onClick = self.ItemSelected,
 			value=value)
 		self.items.append (newBtn)
+		self.optionItems.append (newBtn)
 		self.FitItems (preserve=False)
 
 		# Extend own bounds downwards to accomodate new item
@@ -260,9 +284,7 @@ class SelectionGroup (UIElement):
 		UIElement.Tick (self)
 
 	def ItemSelected (self, selectedItem):
-		for item in self.items:
-			item.SetBackgroundColour (UI_HUD_BG_COLOUR)
-		selectedItem.SetBackgroundColour (UI_HUD_SELECTED_COLOUR)
+		self.SelectItem (selectedItem.value)
 		self.onSelect (selectedItem)
 
 class Button (BasicFrame):
@@ -314,6 +336,7 @@ class Button (BasicFrame):
 	
 	@FilterClick
 	def Click (self, x, y):
+		print "got click"
 		if self.onClick: self.onClick (self)
 
 class CyclicButton (Button):

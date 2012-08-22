@@ -121,9 +121,9 @@ class CVMarker (Marker):
 		if not self.visible: return
 		# Generate MIDI output
 		mX = int(self.x*127)
-		mY = int((1-self.y)*127)
-		self.midiOut.SendControl (mX,controller=self.xController,channel=1)
-		self.midiOut.SendControl (mY,controller=self.yController,channel=1)
+		mY = int(self.y*127)
+		self.midiOut.SendControl (mX,controller=self.xController,channel=5)
+		self.midiOut.SendControl (mY,controller=self.yController,channel=5)
 
 class NoteMarker (Marker):
 	'''
@@ -270,7 +270,7 @@ class Tracker:
 			midiOut=self.midiOut,
 			channel=0x91,
 			scale=self.scale,
-			mode=NoteMarker.MODE_LEGATO,
+			mode=NoteMarker.MODE_AUTORELEASE,
 			strings=self.GenerateStrings (0.75,GUITAR),
 			muteOnHide=True))
 		self.markers.append (NoteMarker ( # Green
@@ -290,14 +290,13 @@ class Tracker:
 			scale=self.scale,
 			mode=NoteMarker.MODE_AUTORELEASE,
 			strings=self.GenerateStrings (0.25, GUITAR)))
-		self.markers.append (NoteMarker ( # Yellow
+		self.markers.append (CVMarker ( # Yellow
 			name="Yellow",
-			colour=(255,255,0),
+			colour=(0,255,255),
 			colourRange=yellowRange,
 			midiOut=self.midiOut,
-			channel=0x94,
-			scale=self.scale,
-			strings=self.GenerateStrings (0.45,[0])))
+			xChannel=0x94,
+			yChannel=0x94))
 
 	def Tick (self, timeElapsed):
 		visibleMarkers = []

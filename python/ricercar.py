@@ -5,7 +5,7 @@ import pygame
 from config import *
 from imgproc import StreamProcessor
 from tracker import Marker, Tracker
-import MIDIio
+from MIDIio import MIDIDevice
 from ui import MainWindow
 
 class FrameTimer:
@@ -33,10 +33,12 @@ class Scheduler:
 	''' Provides the main loop functionality for ricercar. '''
 	def __init__ (self):
 		# Initialise MIDI
-		midiOut = self.midiOut = MIDIio.MIDIDevice (MIDI_OUT_DEVICE, useInput=False)
-		midiIn = self.midiIn = MIDIio.MIDIDevice (MIDI_IN_DEVICE, useOutput=False)
+		midiOut = self.midiOut = MIDIDevice (mode=MIDIDevice.MODE_OUTPUT)
+		midiIn = self.midiIn = MIDIDevice (mode=MIDIDevice.MODE_INPUT)
+		midiOut.OpenPort (MIDI_OUT_DEVICE)
+		midiIn.OpenPort (MIDI_IN_DEVICE)
 		# GUI, Tracker, Image processing
-		self.tracker = Tracker (self.midiOut)
+		tracker = self.tracker = Tracker (midiOut)
 		self.midiIn.SetTracker (self.tracker)
 		self.streamProc = StreamProcessor (self.tracker)
 		window = self.window = MainWindow (

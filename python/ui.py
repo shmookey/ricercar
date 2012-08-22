@@ -133,9 +133,9 @@ class MainWindow:
 		#glClear (GL_COLOR_BUFFER_BIT)
 
 		glColor4f (1.0,1.0,1.0,1.0)
-		#if self.streamProcessor.capture:
-		self.LoadVideoTextures ()
-		self.DrawVideoStream ()
+		if self.streamProcessor.capture:
+			self.LoadVideoTextures ()
+			self.DrawVideoStream ()
 	
 		#glBindTexture (GL_TEXTURE_2D, self.uiTexture)
 		#self.DrawTexturedRect (FRAME_NOTEXTURE, 0, 0, DISPLAY_SIZE[0], DISPLAY_SIZE[1])
@@ -473,14 +473,14 @@ class VideoConfigurationWindow (BasicFrame):
 		if fps > 0:
 			self.streamProcessor.SetVideoSource (
 				deviceID = self.streamProcessor.deviceID,
-				width = newRes[0],
-				height = newRes[1],
-				fps = self.streamProcessor.streamFPS)
+				rWidth = newRes[0],
+				rHeight = newRes[1],
+				rFPS = self.streamProcessor.streamFPS)
 		else:
 			self.streamProcessor.SetVideoSource (
 				deviceID = self.streamProcessor.deviceID,
-				width = newRes[0],
-				height = newRes[1])
+				rWidth = newRes[0],
+				rHeight = newRes[1])
 	
 	def FPSClick (self, button):
 		currentFPS = self.streamProcessor.streamFPS
@@ -491,9 +491,9 @@ class VideoConfigurationWindow (BasicFrame):
 		newFPS = STREAM_RATES [fpsIdx]
 		self.streamProcessor.SetVideoSource (
 			deviceID = self.streamProcessor.deviceID,
-			width = self.streamProcessor.streamWidth,
-			height = self.streamProcessor.streamHeight,
-			fps = newFPS)
+			rWidth = self.streamProcessor.streamWidth,
+			rHeight = self.streamProcessor.streamHeight,
+			rFPS = newFPS)
 
 class TrackerConfigurationWindow (BasicFrame):
 	''' A lean configuration interface for the MIDI output caused by a marker.
@@ -528,7 +528,7 @@ class TrackerConfigurationWindow (BasicFrame):
 		markerTypeButtons = self.markerTypeButtons = [CyclicButton (
 			labels = ["Note","CV"],
 			values = [Marker.TYPE_NOTE,Marker.TYPE_CV],
-			startIndex = 0,
+			startIndex = marker.typeID,
 			window = window,
 			bounds = Rect (
 				self.paramTable.bounds.xMax,
@@ -543,12 +543,20 @@ class TrackerConfigurationWindow (BasicFrame):
 		for i, marker in enumerate (tracker.markers):
 			ID = marker.ID
 			button = markerTypeButtons[i]
-			newMarkerOpts = NoteMarkerConfigurationStrip (
-				marker = marker,
-				window = self.window,
-				bounds = Rect (button.bounds.xMax, button.bounds.y-1, 0, 0),
-				bgColour = None
-			)
+			if isinstance(marker,NoteMarker):
+				newMarkerOpts = NoteMarkerConfigurationStrip (
+					marker = marker,
+					window = self.window,
+					bounds = Rect (button.bounds.xMax, button.bounds.y-1, 0, 0),
+					bgColour = None
+				)
+			elif isinstance(marker,CVMarker):
+				newMarkerOpts = CVMarkerConfigurationStrip (
+					marker = marker,
+					window = self.window,
+					bounds = Rect (button.bounds.xMax, button.bounds.y-1, 0, 0),
+					bgColour = None
+				)
 			self.markerSubmenus[ID] = newMarkerOpts
 			self.items.append (newMarkerOpts)
 
@@ -579,11 +587,6 @@ class TrackerConfigurationWindow (BasicFrame):
 			
 			if button.value == Marker.TYPE_NOTE:
 				# Display new NoteMarker options
-				newMarkerOpts = NoteMarkerConfigurationStrip (
-					marker = marker,
-					window = self.window,
-					bounds = Rect (button.bounds.xMax, button.bounds.y-1, 0, 0),
-					bgColour = None)
 				newMarker = NoteMarker (
 					colour = marker.colour,
 					colourRange = marker.colourRange,
@@ -592,15 +595,17 @@ class TrackerConfigurationWindow (BasicFrame):
 					name = marker.name,
 					scale = self.tracker.scale,
 					mode = MARKER_NOTE_DEFAULT_MODE,
-					strings = self.tracker.GenerateStrings ((marker.ID+1)/8+0.5,[0]),
+					stringOffset=marker.stringOffset,
+					tuning=GUITAR,
+					#strings = self.tracker.GenerateStrings ((marker.ID+1)/8+0.5,[0]),
 					ID = marker.ID)
-			elif button.value == Marker.TYPE_CV:
-				# Display CVMarker options
-				newMarkerOpts = CVMarkerConfigurationStrip (
-					marker = marker,
+				newMarkerOpts = NoteMarkerConfigurationStrip (
+					marker = newMarker,
 					window = self.window,
 					bounds = Rect (button.bounds.xMax, button.bounds.y-1, 0, 0),
 					bgColour = None)
+			elif button.value == Marker.TYPE_CV:
+				# Display CVMarker options
 				newMarker = CVMarker (
 					colour = marker.colour,
 					colourRange = marker.colourRange,
@@ -608,13 +613,20 @@ class TrackerConfigurationWindow (BasicFrame):
 					xChannel = marker.channel,
 					yChannel = marker.channel,
 					name = marker.name,
+					stringOffset=marker.stringOffset,
 					xController = MARKER_CV_DEFAULT_X_CONTROLLER,
 					yController = MARKER_CV_DEFAULT_Y_CONTROLLER,
 					ID = marker.ID)
+				newMarkerOpts = CVMarkerConfigurationStrip (
+					marker = newMarker,
+					window = self.window,
+					bounds = Rect (button.bounds.xMax, button.bounds.y-1, 0, 0),
+					bgColour = None)
 			self.items.append (newMarkerOpts)
 			self.markerSubmenus[marker.ID] = newMarkerOpts
 			idx = self.tracker.markers.index (marker)
 			self.tracker.markers[idx] = newMarker
+			button.onClick = self.GenerateClickHandler (newMarker)
 
 			# Resize to fit new marker options
 			self.FitItems ()
@@ -638,24 +650,47 @@ class NoteMarkerConfigurationStrip (BasicFrame):
 			bounds = Rect (bounds.x, bounds.y, UI_TABLE_COLUMN_WIDTH, UI_TABLE_ROW_HEIGHT),
 			labels = ["Ch: %i" % (i+1) for i in range(16)],
 			values = [MIDI_CHANNEL_START + i for i in range(16)],
-			startIndex = 0,
+			startIndex = marker.channel,
 			onClick = self.ChannelClick
 		)
+		stringConf = StringConfigurationStrip (
+			marker = self.marker,
+			window = self.window,
+			bounds = Rect (channelButton.bounds.xMax,
+				bounds.y,
+				UI_TABLE_COLUMN_WIDTH*1.5,
+				UI_TABLE_ROW_HEIGHT),
+			bgColour = None)
 		markerModeButton = self.markerModeButton = CyclicButton (
 			window = self.window,
-			bounds = Rect (channelButton.bounds.xMax, bounds.y, UI_TABLE_COLUMN_WIDTH*1.5, UI_TABLE_ROW_HEIGHT),
+			bounds = Rect (stringConf.bounds.xMax, bounds.y, UI_TABLE_COLUMN_WIDTH*1.5, UI_TABLE_ROW_HEIGHT),
 			labels = ["AutoRelease","Toggle","Legato"],
 			values = [NoteMarker.MODE_AUTORELEASE, NoteMarker.MODE_TOGGLE, NoteMarker.MODE_LEGATO],
-			startIndex = 0,
+			startIndex = marker.mode,
 			onClick = self.MarkerModeClick
 		)
-		modeOptions = self.modeOptions = AutoReleaseConfigurationStrip (
-			marker = marker,
-			window = window,
-			bounds = Rect (markerModeButton.bounds.xMax, bounds.y, 0, 0),
-			bgColour = None
-		)
-		self.items = [channelButton, markerModeButton, modeOptions]
+		if marker.mode == NoteMarker.MODE_AUTORELEASE:
+			modeOptions = self.modeOptions = AutoReleaseConfigurationStrip (
+				marker = self.marker,
+				window = self.window,
+				bounds = Rect (self.markerModeButton.bounds.xMax, self.bounds.y, 0, 0),
+				bgColour = None)
+			self.marker.mode = NoteMarker.MODE_AUTORELEASE
+		elif marker.mode == NoteMarker.MODE_LEGATO:
+			modeOptions = self.modeOptions = LegatoConfigurationStrip (
+				marker = self.marker,
+				window = self.window,
+				bounds = Rect (self.markerModeButton.bounds.xMax, self.bounds.y, 0, 0),
+				bgColour = None)
+			self.marker.mode = NoteMarker.MODE_LEGATO
+		elif marker.mode == NoteMarker.MODE_TOGGLE:
+			modeOptions = self.modeOptions = ToggleConfigurationStrip (
+				marker = self.marker,
+				window = self.window,
+				bounds = Rect (self.markerModeButton.bounds.xMax, self.bounds.y, 0, 0),
+				bgColour = None)
+			self.marker.mode = NoteMarker.MODE_TOGGLE
+		self.items = [channelButton, stringConf, markerModeButton, modeOptions]
 		self.FitItems ()
 
 	def MarkerModeClick (self, button):
@@ -707,14 +742,14 @@ class CVMarkerConfigurationStrip (BasicFrame):
 			bounds = Rect (bounds.x, bounds.y, UI_TABLE_COLUMN_WIDTH, UI_TABLE_ROW_HEIGHT),
 			labels = ["X Ch: %i" % (i+1) for i in range(16)],
 			values = range(16),
-			startIndex = 0,
+			startIndex = marker.xChannel,
 		)
 		yChannelButton = CyclicButton (
 			window = self.window,
 			bounds = Rect (xChannelButton.bounds.xMax, bounds.y, UI_TABLE_COLUMN_WIDTH, UI_TABLE_ROW_HEIGHT),
 			labels = ["Y Ch: %i" % (i+1) for i in range(16)],
 			values = range(16),
-			startIndex = 0,
+			startIndex = marker.yChannel,
 		)
 		self.items = [xChannelButton, yChannelButton]
 		self.FitItems ()
@@ -738,12 +773,15 @@ class AutoReleaseConfigurationStrip (BasicFrame):
 
 		self.marker = marker
 
+		isMonophonic = 0
+		if marker.polyphonic == True: isMonophonic = 1
+		durationIndex = int((marker.duration * 10)-1)
 		duration = self.durationButton = CyclicButton (
 			window = self.window,
 			bounds = Rect (bounds.x, bounds.y, UI_TABLE_COLUMN_WIDTH, UI_TABLE_ROW_HEIGHT),
 			labels = ["%i00ms" % (i+1) for i in range(10)],
 			values = [0.1 * (i+1) for i in range(10)],
-			startIndex = 1,
+			startIndex = durationIndex,
 			onClick = self.DurationClick
 		)
 		polyphonicButton = self.polyphonicButton = CyclicButton (
@@ -755,7 +793,7 @@ class AutoReleaseConfigurationStrip (BasicFrame):
 				UI_TABLE_ROW_HEIGHT),
 			labels = ["Polyphonic","Monophonic"],
 			values = [Marker.MODE_POLYPHONIC, Marker.MODE_MONOPHONIC],
-			startIndex = 1,
+			startIndex = isMonophonic,
 			onClick = self.PolyphonicClick
 		)
 		self.items = [duration, polyphonicButton]
@@ -811,3 +849,33 @@ class LegatoConfigurationStrip (BasicFrame):
 
 	def PolyphonicClick (self, button):
 		self.marker.polyphonic = button.value
+
+class StringConfigurationStrip (BasicFrame):
+	def __init__ (self,
+			marker = None,
+			window = None,
+			bounds = None,
+			bgColour = None):
+		BasicFrame.__init__ (self,
+			window = window,
+			bounds = bounds,
+			bgColour = bgColour)
+
+		self.marker = marker
+		tuningButton = self.tuningButton = CyclicButton (
+			window = self.window,
+			bounds = Rect (
+				bounds.x,
+				bounds.y,
+				UI_TABLE_COLUMN_WIDTH*1.5,
+				UI_TABLE_ROW_HEIGHT),
+			labels = TUNING_NAMES,
+			values = TUNING_OFFSETS,
+			startIndex = TUNING_OFFSETS.index(marker.tuning),
+			onClick = self.TuningClick
+		)
+		self.items = [tuningButton]
+		self.FitItems ()
+
+	def TuningClick (self, button):
+		self.marker.SetTuning (button.value)

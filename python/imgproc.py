@@ -111,30 +111,38 @@ class StreamProcessor:
 			y = py/GRID_SIZE[1]
 		return (x,y,px,py)
 
-	def SetVideoSource (self, deviceID=STREAM_DEVICE, width=STREAM_SIZE[0], height=STREAM_SIZE[1], fps=STREAM_FPS):
+	def SetVideoSource (self, deviceID=STREAM_DEVICE, rWidth=STREAM_SIZE[0], rHeight=STREAM_SIZE[1], rFPS=STREAM_FPS):
 		''' Opens a video stream, optionally requesting one or more parameters from
 		the driver.'''
 		self.deviceID = deviceID
 		# Open the stream.
 		self.capture = cv.CaptureFromCAM (deviceID)
+		cv.QueryFrame (self.capture)
 		# Attempt to set parameters.
-		cv.SetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_WIDTH,width)
-		cv.SetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_HEIGHT,height)
+		cv.SetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_WIDTH,rWidth)
+		cv.SetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_WIDTH,rWidth)
+		cv.SetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_HEIGHT,rHeight)
+		cv.SetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_HEIGHT,rHeight)
 		#if not fps == None:
-		cv.SetCaptureProperty (self.capture, cv.CV_CAP_PROP_FPS,fps)
+		cv.SetCaptureProperty (self.capture, cv.CV_CAP_PROP_FPS,rFPS)
+		cv.WaitKey (10)
 		# Now get the actual parameters used:
-		rwidth = self.streamWidth = int(cv.GetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_WIDTH))
-		rheight = self.streamHeight = int(cv.GetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_HEIGHT))
+		aWidth = self.streamWidth = int(cv.GetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_WIDTH))
+		aHeight = self.streamHeight = int(cv.GetCaptureProperty (self.capture, cv.CV_CAP_PROP_FRAME_HEIGHT))
+		
+		if not (rWidth == aWidth and rHeight == aHeight):
+			print "Failed to set resolution at %ix%i, instead got %ix%i" % (
+					rWidth,rHeight,aWidth,aHeight)
 		self.streamFPS = int(cv.GetCaptureProperty (self.capture, cv.CV_CAP_PROP_FPS))
-		if rwidth == 0 or rheight == 0:
+		if aWidth == 0 or aHeight == 0:
 			self.capture = None
 			self.modeChangeCallback ()
 			return
 		
-		dimensions = (rwidth, rheight)
+		dimensions = (aWidth, aHeight)
 		if not dimensions in STREAM_SIZES:
 			STREAM_SIZES.append (dimensions)
-			print "Detected unsupported resolution %ix%i" % (width,height)
+			print "Detected unsupported resolution %ix%i" % (aWidth,aHeight)
 
 		# Initialise frame buffer
 		self.origFrame = cv.CreateImage (dimensions, 8, 3)

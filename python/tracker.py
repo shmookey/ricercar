@@ -41,6 +41,7 @@ class Marker:
 			colour=None,
 			midiOut=None,
 			colourRange=None,
+			stringOffset=0.5,
 			ID = None):
 		self.name = name
 		self.x = x # Position
@@ -54,6 +55,7 @@ class Marker:
 		self.colour = colour
 		self.midiOut = midiOut
 		self.colourRange = colourRange
+		self.stringOffset = stringOffset
 		if ID == None:
 			self.ID = Marker.nMarkers
 			Marker.nMarkers += 1
@@ -87,6 +89,7 @@ class Marker:
 		self.tY = y
 
 class CVMarker (Marker):
+	typeID = Marker.TYPE_CV
 	def __init__ (self,
 			name="CVMarker",
 			x=0,
@@ -100,6 +103,7 @@ class CVMarker (Marker):
 			xRange=(0,127),
 			yRange=(0,127),
 			colourRange=None,
+			stringOffset=0.5,
 			ID = None):
 		Marker.__init__ (self,
 			name=name,
@@ -108,6 +112,7 @@ class CVMarker (Marker):
 			colour=colour,
 			midiOut=midiOut,
 			colourRange=colourRange,
+			stringOffset=stringOffset,
 			ID = ID)
 		self.xController = xController
 		self.yController = yController
@@ -150,6 +155,7 @@ class NoteMarker (Marker):
 	MODE_TOGGLE = 1
 	MODE_LEGATO = 2
 
+	typeID = Marker.TYPE_NOTE
 	def __init__ (self,
 			name="NoteMarker",
 			x=0,
@@ -166,7 +172,9 @@ class NoteMarker (Marker):
 			muteOnHide=False,
 			polyphonic=False,
 			ID=None,
-			duration=MARKER_NOTE_DEFAULT_DURATION):
+			tuning=SINGLE,
+			duration=MARKER_NOTE_DEFAULT_DURATION,
+			stringOffset=0.5):
 		Marker.__init__ (self,
 			name=name,
 			x=x,
@@ -174,17 +182,22 @@ class NoteMarker (Marker):
 			colour=colour,
 			midiOut=midiOut,
 			colourRange=colourRange,
+			stringOffset=stringOffset,
 			ID = ID)
 		self.channel = channel
 		self.noteRange = noteRange
 		self.velocityRange = velocityRange
 		self.scale = scale
-		self.strings = strings
+		self.SetTuning (tuning)
 		self.mode = mode
 		self.muteOnHide = muteOnHide
 		self.polyphonic = polyphonic
 		self.duration = duration
-	
+
+	def SetTuning (self, tuning):
+		self.tuning = tuning
+		self.strings = self.GenerateStrings (self.stringOffset,tuning)
+
 	def Disable (self):
 		''' The marker was not found in the processed image. '''
 		self.visible = False
@@ -212,7 +225,7 @@ class NoteMarker (Marker):
 					string.remainingNoteTime[i] -= timeElapsed
 				while len(string.activeNotes)>0 and string.remainingNoteTime[0] <= 0:
 					# Send note-off and remove from active notes.
-					self.midiOut.NoteOff (string.activeNotes[0],self.channel)
+					self.midiOut.NoteOff (string.activeNotes[0],0x90 + self.channel)
 					string.remainingNoteTime.pop (0)
 					string.activeNotes.pop (0)
 		
@@ -225,12 +238,12 @@ class NoteMarker (Marker):
 			if len(string.activeNotes) > 0:
 				if self.mode == NoteMarker.MODE_TOGGLE:
 					# Toggle mode: If the string is already activated, deactive it.
-					self.midiOut.NoteOff (string.activeNotes[0],self.channel)
+					self.midiOut.NoteOff (string.activeNotes[0],0x90 + self.channel)
 					string.activeNotes = []
 					continue
 				elif not self.polyphonic:
 					# Not polyphonic: mute active notes on this string.
-					for note in string.activeNotes: self.midiOut.NoteOff (note, self.channel)
+					for note in string.activeNotes: self.midiOut.NoteOff (note, 0x90 + self.channel)
 					string.activeNotes = []
 					string.remainingNoteTime = []
 
@@ -240,14 +253,20 @@ class NoteMarker (Marker):
 			if self.mode == NoteMarker.MODE_AUTORELEASE:
 				string.remainingNoteTime.append (self.duration)
 			velocity = max (64, min (self.velocity*64,127))
-			self.midiOut.NoteOn (note, velocity, channel=self.channel)
+			self.midiOut.NoteOn (note, velocity, channel=0x90 + self.channel)
 
 	def MuteActiveNotes (self):
 		''' Sends note-off messages for all active notes on all strings for this marker. '''
 		for string in self.strings:
-			for note in string.activeNotes: self.midiOut.NoteOff (note, self.channel)
+			for note in string.activeNotes: self.midiOut.NoteOff (note, 0x90 + self.channel)
 			string.activeNotes = []
 			string.remainingNoteTime = []
+
+	def GenerateStrings (self, centre, offsetPattern, spacing=0.05):
+		n = len (offsetPattern)
+		width = n * spacing
+		left = centre - width/2
+		return [String(left+spacing*i, offsetPattern[i]) for i in range(n)]
 
 class Tracker:
 	def __init__ (self, midiOut):
@@ -268,35 +287,43 @@ class Tracker:
 			colour=(0,0,255),
 			colourRange=redRange,
 			midiOut=self.midiOut,
-			channel=0x91,
+			channel=1,
 			scale=self.scale,
-			mode=NoteMarker.MODE_AUTORELEASE,
-			strings=self.GenerateStrings (0.75,GUITAR),
+			mode=NoteMarker.MODE_TOGGLE,
+			tuning=MAJOR,
+			stringOffset=0.75,
+			#strings=self.GenerateStrings (0.75,GUITAR),
 			muteOnHide=True))
 		self.markers.append (NoteMarker ( # Green
 			name="Green",
 			colour=(0,255,0),
 			colourRange=greenRange,
 			midiOut=self.midiOut,
-			channel=0x92,
+			channel=2,
 			scale=self.scale,
-			strings=self.GenerateStrings (0.55,[0])))
+			mode=NoteMarker.MODE_LEGATO,
+			tuning=FIFTH,
+			stringOffset=0.55,))
+			#strings=self.GenerateStrings (0.55,[0])))
 		self.markers.append (NoteMarker ( # Blue
 			name="Blue",
 			colour=(255,0,0),
 			colourRange=blueRange,
 			midiOut=self.midiOut,
-			channel=0x90,
+			channel=0,
 			scale=self.scale,
 			mode=NoteMarker.MODE_AUTORELEASE,
-			strings=self.GenerateStrings (0.25, GUITAR)))
+			tuning=GUITAR,
+			stringOffset=0.25,))
+			#strings=self.GenerateStrings (0.25, GUITAR)))
 		self.markers.append (CVMarker ( # Yellow
 			name="Yellow",
 			colour=(0,255,255),
 			colourRange=yellowRange,
 			midiOut=self.midiOut,
-			xChannel=0x94,
-			yChannel=0x94))
+			xChannel=4,
+			stringOffset=0.45,
+			yChannel=4))
 
 	def Tick (self, timeElapsed):
 		visibleMarkers = []
@@ -305,8 +332,3 @@ class Tracker:
 			marker.Tick (timeElapsed)
 			if not marker.visible: continue
 
-	def GenerateStrings (self, centre, offsetPattern, spacing=0.05):
-		n = len (offsetPattern)
-		width = n * spacing
-		left = centre - width/2
-		return [String(left+spacing*i, offsetPattern[i]) for i in range(n)]

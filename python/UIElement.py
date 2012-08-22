@@ -336,7 +336,6 @@ class Button (BasicFrame):
 	
 	@FilterClick
 	def Click (self, x, y):
-		print "got click"
 		if self.onClick: self.onClick (self)
 
 class CyclicButton (Button):

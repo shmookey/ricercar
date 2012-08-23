@@ -14,9 +14,9 @@ WINDOW_TITLE = "ricercar"
 #
 ##
 
-MIDI_OUT_DEVICE = 5 # Use 0 for the built-in GS MIDI wavetable
+MIDI_OUT_DEVICE = 0 # Use 0 for the built-in GS MIDI wavetable
 MIDI_IN_DEVICE = 0
-STREAM_DEVICE = 2
+STREAM_DEVICE = 0
 STREAM_FPS = 60
 
 ###

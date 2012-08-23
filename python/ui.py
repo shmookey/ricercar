@@ -10,7 +10,7 @@ from ctypes import *
 
 from UIElement import *
 from tracker import Marker, NoteMarker, CVMarker
-from music import PITCH_TO_NOTE
+from music import *
 from CVGLImage import CVGLImage
 from MIDIio import MIDIDevice
 from constants import *
@@ -43,6 +43,10 @@ class MainWindow:
 			tracker = tracker,
 			window = self,
 			bounds = Rect (0,0,0,0))
+		globalConf = self.globalConfigurationWindow = GlobalConfigurationWindow (
+			tracker = tracker,
+			window = self,
+			bounds = Rect (0,300,0,0))
 		self.midiConfigurationWindow = MIDIConfigurationWindow (
 			midiIn = midiIn,
 			midiOut = midiOut,
@@ -52,9 +56,26 @@ class MainWindow:
 			streamProcessor = streamProcessor,
 			window = self,
 			bounds = Rect (0,trackerConf.bounds.yMax,0,0))
+		self.menuButton = Button (
+			label = "Show/Hide Menus (TAB)",
+			window = self,
+			bounds = Rect (800,DISPLAY_SIZE[1]-UI_TABLE_ROW_HEIGHT+1, UI_SHOW_MENU_WIDTH, UI_TABLE_ROW_HEIGHT),
+			onClick = self.ToggleHUD,
+			bgColour = UI_BUTTON_BG_COLOUR
+		)
+		self.exitButton = Button (
+			label = "Exit",
+			window = self,
+			bounds = Rect (700,DISPLAY_SIZE[1]-UI_TABLE_ROW_HEIGHT+1, UI_EXIT_WIDTH, UI_TABLE_ROW_HEIGHT),
+			onClick = self.Exit,
+			bgColour = UI_BUTTON_BG_COLOUR
+		)
 		self.items.append (self.trackerConfigurationWindow)
+		self.items.append (self.globalConfigurationWindow)
 		self.items.append (self.videoConfigurationWindow)
 		self.items.append (self.midiConfigurationWindow)
+		self.items.append (self.menuButton)
+		self.items.append (self.exitButton)
 		streamProcessor.SetModeChangeCallback (self.VideoModeChanged)
 
 	def InitVideo (self):
@@ -65,6 +86,7 @@ class MainWindow:
 		w, h = DISPLAY_SIZE
 		pygame.init ()
 		pygame.display.set_mode ((w,h), pygame.OPENGL|pygame.DOUBLEBUF)
+		pygame.display.set_caption (WINDOW_TITLE)
 		
 		glClearColor(0.0,0.0,0.0,0.0)
 		glColor3f (1.0,1.0,1.0)
@@ -119,6 +141,9 @@ class MainWindow:
 		self.fonts[FONT_SMALL] = FTGL.TextureFont (FONT)
 		self.fonts[FONT_SMALL].FaceSize (16)
 
+	def Exit (self, button=None):
+		self.scheduler.Stop ()
+
 	def VideoModeChanged (self):
 		sp = self.streamProcessor
 		self.videoConfigurationWindow.VideoModeChanged ()
@@ -152,9 +177,10 @@ class MainWindow:
 
 		pygame.display.flip ()
 
-	def ToggleHUD (self):
+	def ToggleHUD (self, button=None):
 		for item in self.items:
 			item.visible = not item.visible
+		self.menuButton.visible = True
 
 	def DrawFPS (self):
 		glPushMatrix ()
@@ -495,6 +521,112 @@ class VideoConfigurationWindow (BasicFrame):
 			rHeight = self.streamProcessor.streamHeight,
 			rFPS = newFPS)
 
+class GlobalConfigurationWindow (BasicFrame):
+	def __init__ (self,
+			tracker = None,
+			bounds = None,
+			window = None,
+			bgColour = UI_HUD_BG_COLOUR,
+			textColour = UI_HUD_TEXT_COLOUR):
+		BasicFrame.__init__ (self,
+			bounds = bounds,
+			window = window,
+			bgColour = bgColour)
+
+		self.tracker = tracker
+
+		titleLabel = Label (
+			text = "Global Settings",
+			bounds = Rect (
+				bounds.x,
+				bounds.y + UI_TABLE_ROW_HEIGHT*3,
+				UI_GLOBAL_CONFIG_COLUMN_WIDTH,
+				UI_TABLE_ROW_HEIGHT),
+			window = window,
+			bgColour = None)
+		self.items.append (titleLabel)
+		octavesLabel = Label (
+			text = "Octaves",
+			bounds = Rect (
+				bounds.x,
+				titleLabel.bounds.y - UI_TABLE_ROW_HEIGHT,
+				UI_GLOBAL_CONFIG_COLUMN_WIDTH,
+				UI_TABLE_ROW_HEIGHT),
+			window = window)
+		self.items.append (octavesLabel)
+		octavesButton = CyclicButton (
+			labels = ["%i" % i for i in OCTAVE_DISPLAY_RANGE],
+			values = OCTAVE_DISPLAY_RANGE,
+			startIndex = OCTAVE_DISPLAY_RANGE.index(tracker.scale.nOctaves),
+			bounds = Rect (
+				titleLabel.bounds.xMax,
+				titleLabel.bounds.y - UI_TABLE_ROW_HEIGHT,
+				UI_GLOBAL_CONFIG_COLUMN_WIDTH,
+				UI_TABLE_ROW_HEIGHT),
+			window = window,
+			onClick = self.OctavesClick)
+		self.items.append (octavesButton)
+		scaleLabel = Label (
+			text = "Scale",
+			bounds = Rect (
+				bounds.x,
+				octavesLabel.bounds.y - UI_TABLE_ROW_HEIGHT,
+				UI_GLOBAL_CONFIG_COLUMN_WIDTH,
+				UI_TABLE_ROW_HEIGHT),
+			window = window)
+		self.items.append (scaleLabel)
+		scaleButton = self.scaleButton = CyclicButton (
+			labels = ["Pentatonic","Diatonic","Chromatic"],
+			values = [Scale.TYPE_PENTATONIC, Scale.TYPE_DIATONIC, Scale.TYPE_CHROMATIC],
+			startIndex = tracker.scale.scaleType,
+			bounds = Rect (
+				scaleLabel.bounds.xMax,
+				octavesLabel.bounds.y - UI_TABLE_ROW_HEIGHT,
+				UI_GLOBAL_CONFIG_COLUMN_WIDTH,
+				UI_TABLE_ROW_HEIGHT),
+			window = window,
+			onClick = self.ScaleClick)
+		self.items.append (scaleButton)
+		keyLabel = Label (
+			text = "Key:",
+			bounds = Rect (
+				bounds.x,
+				scaleLabel.bounds.y - UI_TABLE_ROW_HEIGHT,
+				UI_GLOBAL_CONFIG_COLUMN_WIDTH,
+				UI_TABLE_ROW_HEIGHT),
+			window = window)
+		self.items.append (keyLabel)
+		keyButton = self.keyButton = CyclicButton (
+			labels = KEYS,
+			values = [i for i in range(len(KEYS))],
+			bounds = Rect (
+				keyLabel.bounds.xMax,
+				scaleLabel.bounds.y - UI_TABLE_ROW_HEIGHT,
+				UI_GLOBAL_CONFIG_COLUMN_WIDTH,
+				UI_TABLE_ROW_HEIGHT),
+			window = window,
+			onClick = self.KeyClick)
+		self.items.append (keyButton)
+		
+		self.FitItems ()
+
+	def ScaleClick (self, button):
+		oldScale = self.tracker.scale
+		newScale = None
+		if button.value == Scale.TYPE_DIATONIC:
+			newScale = DiatonicScale (oldScale.key, oldScale.nOctaves)
+		elif button.value == Scale.TYPE_PENTATONIC:
+			newScale = PentatonicScale (oldScale.key, oldScale.nOctaves)
+		elif button.value == Scale.TYPE_CHROMATIC:
+			newScale = ChromaticScale (oldScale.key, oldScale.nOctaves)
+		self.tracker.SetScale (newScale)
+
+	def OctavesClick (self, button):
+		self.tracker.scale.SetOctaveRange (button.value)
+
+	def KeyClick (self, button):
+		self.tracker.scale.SetKey (button.value)
+
 class TrackerConfigurationWindow (BasicFrame):
 	''' A lean configuration interface for the MIDI output caused by a marker.
 	
@@ -649,14 +781,40 @@ class NoteMarkerConfigurationStrip (BasicFrame):
 			window = self.window,
 			bounds = Rect (bounds.x, bounds.y, UI_TABLE_COLUMN_WIDTH, UI_TABLE_ROW_HEIGHT),
 			labels = ["Ch: %i" % (i+1) for i in range(16)],
-			values = [MIDI_CHANNEL_START + i for i in range(16)],
+			values = [i for i in range(16)],
 			startIndex = marker.channel,
 			onClick = self.ChannelClick
+		)
+		muteHideStatus = 0
+		if marker.muteOnHide == True: muteHideStatus = 1
+		muteHideButton = CyclicButton (
+			window = self.window,
+			bounds = Rect (channelButton.bounds.xMax, bounds.y, UI_TABLE_COLUMN_WIDTH, UI_TABLE_ROW_HEIGHT),
+			labels = ["Hold","Mute"],
+			values = [False, True],
+			startIndex = muteHideStatus,
+			onClick = self.MuteHideClick
+		)
+		octaveTransposeButton = CyclicButton (
+			window = self.window,
+			bounds = Rect (muteHideButton.bounds.xMax, bounds.y, UI_TABLE_COLUMN_WIDTH, UI_TABLE_ROW_HEIGHT),
+			labels = ["Oct: %i" % i for i in MARKER_TRANSPOSE_OCTAVE_RANGE],
+			values = MARKER_TRANSPOSE_OCTAVE_RANGE,
+			startIndex = MARKER_TRANSPOSE_OCTAVE_RANGE.index(marker.transposeOctaves),
+			onClick = self.OctaveTransposeClick
+		)
+		semitoneTransposeButton = CyclicButton (
+			window = self.window,
+			bounds = Rect (octaveTransposeButton.bounds.xMax, bounds.y, UI_TABLE_COLUMN_WIDTH, UI_TABLE_ROW_HEIGHT),
+			labels = ["Semi: %i" % i for i in MARKER_TRANSPOSE_SEMITONE_RANGE],
+			values = MARKER_TRANSPOSE_SEMITONE_RANGE,
+			startIndex = MARKER_TRANSPOSE_SEMITONE_RANGE.index(marker.transposeSemitones),
+			onClick = self.SemitoneTransposeClick
 		)
 		stringConf = StringConfigurationStrip (
 			marker = self.marker,
 			window = self.window,
-			bounds = Rect (channelButton.bounds.xMax,
+			bounds = Rect (semitoneTransposeButton.bounds.xMax,
 				bounds.y,
 				UI_TABLE_COLUMN_WIDTH*1.5,
 				UI_TABLE_ROW_HEIGHT),
@@ -690,7 +848,14 @@ class NoteMarkerConfigurationStrip (BasicFrame):
 				bounds = Rect (self.markerModeButton.bounds.xMax, self.bounds.y, 0, 0),
 				bgColour = None)
 			self.marker.mode = NoteMarker.MODE_TOGGLE
-		self.items = [channelButton, stringConf, markerModeButton, modeOptions]
+		self.items = [
+			channelButton,
+			muteHideButton,
+			octaveTransposeButton,
+			semitoneTransposeButton,
+			stringConf,
+			markerModeButton,
+			modeOptions]
 		self.FitItems ()
 
 	def MarkerModeClick (self, button):
@@ -721,9 +886,17 @@ class NoteMarkerConfigurationStrip (BasicFrame):
 		self.items.append (modeOptions)
 		self.FitItems ()
 
+	def MuteHideClick (self, button):
+		self.marker.muteOnHide = button.value
+
+	def OctaveTransposeClick (self, button):
+		self.marker.Transpose (octave=button.value)
+	
+	def SemitoneTransposeClick (self, button):
+		self.marker.Transpose (semitones=button.value)
+
 	def ChannelClick (self, button):
 		self.marker.channel = button.value
-		print self.marker.name, self.marker.channel
 
 class CVMarkerConfigurationStrip (BasicFrame):
 	def __init__ (self,
@@ -740,24 +913,46 @@ class CVMarkerConfigurationStrip (BasicFrame):
 		xChannelButton = CyclicButton (
 			window = self.window,
 			bounds = Rect (bounds.x, bounds.y, UI_TABLE_COLUMN_WIDTH, UI_TABLE_ROW_HEIGHT),
-			labels = ["X Ch: %i" % (i+1) for i in range(16)],
+			labels = ["X Ch: %i" % (i) for i in range(16)],
 			values = range(16),
 			startIndex = marker.xChannel,
+			onClick = self.XChannelClick,
+		)
+		xControllerButton = CyclicButton (
+			window = self.window,
+			bounds = Rect (xChannelButton.bounds.xMax, bounds.y, UI_CV_CTRL_WIDTH, UI_TABLE_ROW_HEIGHT),
+			labels = ["X Ctrl: %i" % (i) for i in MARKER_CONTROLLER_ID_RANGE],
+			values = range(16),
+			startIndex = marker.xController,
+			onClick = self.XControllerClick,
 		)
 		yChannelButton = CyclicButton (
 			window = self.window,
-			bounds = Rect (xChannelButton.bounds.xMax, bounds.y, UI_TABLE_COLUMN_WIDTH, UI_TABLE_ROW_HEIGHT),
-			labels = ["Y Ch: %i" % (i+1) for i in range(16)],
+			bounds = Rect (xControllerButton.bounds.xMax, bounds.y, UI_TABLE_COLUMN_WIDTH, UI_TABLE_ROW_HEIGHT),
+			labels = ["Y Ch: %i" % (i) for i in range(16)],
 			values = range(16),
 			startIndex = marker.yChannel,
+			onClick = self.YChannelClick
 		)
-		self.items = [xChannelButton, yChannelButton]
+		yControllerButton = CyclicButton (
+			window = self.window,
+			bounds = Rect (yChannelButton.bounds.xMax, bounds.y, UI_CV_CTRL_WIDTH, UI_TABLE_ROW_HEIGHT),
+			labels = ["Y Ctrl: %i" % (i) for i in MARKER_CONTROLLER_ID_RANGE],
+			values = range(16),
+			startIndex = marker.yController,
+			onClick = self.YControllerClick,
+		)
+		self.items = [xChannelButton, xControllerButton, yChannelButton, yControllerButton]
 		self.FitItems ()
 
 	def XChannelClick (self, button):
 		self.marker.xChannel = button.value
 	def YChannelClick (self, button):
 		self.marker.yChannel = button.value
+	def XControllerClick (self, button):
+		self.marker.xController = button.value
+	def YControllerClick (self, button):
+		self.marker.yController = button.value
 
 
 class AutoReleaseConfigurationStrip (BasicFrame):

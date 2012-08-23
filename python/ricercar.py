@@ -60,8 +60,7 @@ class Scheduler:
 		self.streamProc.SetVideoSource (deviceID=STREAM_DEVICE)
 		
 		self.running = True
-		while True:
-			if not self.running: return
+		while self.running:
 			# Send heartbeat
 			self.frameTimer.Tick ()
 			self.streamProc.Tick ()
@@ -80,10 +79,13 @@ class Scheduler:
 					glX, glY = event.pos
 					self.window.Click (glX, glY)
 				elif event.type == pygame.QUIT:
-					sys.exit ()
+					self.Stop ()
 
 	def Stop (self):
 		self.running = False
+		print "Stopping ricercar..."
+		pygame.display.quit ()
+		sys.exit ()
 
 # Start ricercar if this file has been invoked as an application.
 if __name__ == "__main__":

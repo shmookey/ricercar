@@ -127,8 +127,8 @@ class CVMarker (Marker):
 		# Generate MIDI output
 		mX = int(self.x*127)
 		mY = int(self.y*127)
-		self.midiOut.SendControl (mX,controller=self.xController,channel=5)
-		self.midiOut.SendControl (mY,controller=self.yController,channel=5)
+		self.midiOut.SendControl (mX,controller=self.xController,channel=self.xChannel+1)
+		self.midiOut.SendControl (mY,controller=self.yController,channel=self.yChannel+1)
 
 class NoteMarker (Marker):
 	'''
@@ -193,6 +193,8 @@ class NoteMarker (Marker):
 		self.muteOnHide = muteOnHide
 		self.polyphonic = polyphonic
 		self.duration = duration
+		self.transposeOctaves = 0
+		self.transposeSemitones = 0
 
 	def SetTuning (self, tuning):
 		self.tuning = tuning
@@ -248,7 +250,7 @@ class NoteMarker (Marker):
 					string.remainingNoteTime = []
 
 			# Determine note from y position and string offset.
-			note = self.scale.GetNote (self.y) + string.noteOffset
+			note = self.GetNote (self.scale.GetNote (self.y) + string.noteOffset)
 			string.activeNotes.append (note)
 			if self.mode == NoteMarker.MODE_AUTORELEASE:
 				string.remainingNoteTime.append (self.duration)
@@ -268,6 +270,17 @@ class NoteMarker (Marker):
 		left = centre - width/2
 		return [String(left+spacing*i, offsetPattern[i]) for i in range(n)]
 
+	def GetNote (self, note):
+		''' Takes an input note, transposes it and return the transposed value. '''
+		n = note + (self.transposeOctaves * 12) + self.transposeSemitones
+		return n
+
+	def Transpose (self, octave=None, semitones=None):
+		if not octave == None:
+			self.transposeOctaves = octave
+		if not semitones == None:
+			self.transposeSemitones = semitones
+
 class Tracker:
 	def __init__ (self, midiOut):
 		self.midiOut = midiOut
@@ -276,7 +289,7 @@ class Tracker:
 		self.featureDisplayFrame = cv.CreateImage (STREAM_SIZE, 8, 3)
 		self.markers = []
 
-		self.scale = DiatonicScale (48,2)
+		self.scale = DiatonicScale (0,2)
 
 		redRange = HSVColourRange (hue=SN_RHUE,saturation=SN_RSAT,value=SN_RVAL,hue2=SN_RHUE2)
 		blueRange = HSVColourRange (hue=SN_BHUE,saturation=SN_BSAT,value=SN_BVAL)
@@ -332,3 +345,7 @@ class Tracker:
 			marker.Tick (timeElapsed)
 			if not marker.visible: continue
 
+	def SetScale (self, scale):
+		self.scale = scale
+		for marker in self.markers:
+			marker.scale = scale
